@@ -125,6 +125,7 @@ enum VideoCompositionBuilder {
         videoComposition.renderSize = result.videoSize
         // オーバーレイ合成は重いので高フレームレート素材は 60fps に丸める
         videoComposition.frameDuration = clampedFrameDuration(result.frameDuration)
+        applySDRColorProperties(to: videoComposition)
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
             postProcessingAsVideoLayer: videoLayer,
             in: parentLayer
@@ -155,6 +156,7 @@ enum VideoCompositionBuilder {
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = result.videoSize
         videoComposition.frameDuration = result.frameDuration
+        applySDRColorProperties(to: videoComposition)
 
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = CMTimeRange(start: .zero, duration: result.duration)
@@ -170,6 +172,48 @@ enum VideoCompositionBuilder {
 
         videoComposition.instructions = [instruction]
         return videoComposition
+    }
+
+    // MARK: - Color
+
+    /// 出力を Rec.709 (SDR) に固定する。
+    /// HDR (HLG / Dolby Vision) 素材はここで SDR にトーンマッピングされ、H.264 出力やスコアボードの色と整合する。
+    private static func applySDRColorProperties(to videoComposition: AVMutableVideoComposition) {
+        videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+        videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+        videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+    }
+
+    // MARK: - Passthrough Check
+
+    /// 再エンコードせずに MP4 へ連結出力してよいかを判定する。
+    /// 全素材が H.264・SDR・同一解像度・同一向きの場合のみ true。
+    /// HEVC / ProRes / HDR / 形式混在の素材は、互換性のため H.264 で再エンコードする。
+    static func canPassthrough(urls: [URL]) async -> Bool {
+        var reference: (size: CGSize, transform: CGAffineTransform)?
+
+        for url in urls {
+            let asset = AVURLAsset(url: url)
+            do {
+                guard let track = try await asset.loadTracks(withMediaType: .video).first else { return false }
+                let (formatDescriptions, characteristics, naturalSize, transform) = try await track.load(
+                    .formatDescriptions, .mediaCharacteristics, .naturalSize, .preferredTransform
+                )
+                let isH264 = !formatDescriptions.isEmpty && formatDescriptions.allSatisfy {
+                    CMFormatDescriptionGetMediaSubType($0) == kCMVideoCodecType_H264
+                }
+                guard isH264, !characteristics.contains(.containsHDRVideo) else { return false }
+
+                if let reference {
+                    guard reference.size == naturalSize, reference.transform == transform else { return false }
+                } else {
+                    reference = (naturalSize, transform)
+                }
+            } catch {
+                return false
+            }
+        }
+        return true
     }
 
     // MARK: - Frame Rate Detection

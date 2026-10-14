@@ -79,7 +79,8 @@ struct VideoManagementSheet: View {
                     PhotosPicker(
                         selection: $selectedItems,
                         maxSelectionCount: 10,
-                        matching: .videos
+                        matching: .videos,
+                        preferredItemEncoding: .current
                     ) {
                         Label(
                             isImporting ? "読み込み中..." : "写真ライブラリから追加",
@@ -214,8 +215,8 @@ struct VideoManagementSheet: View {
             do {
                 guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else { continue }
                 // VideoTransferable が Documents/Videos/ へ直接取り込み済み
+                let originalName = movie.originalFileName
                 let sandboxURL = movie.url
-                let originalName = sandboxURL.lastPathComponent
                 let creationDate = await VideoImportService.creationDate(for: sandboxURL)
                 let thumb = await ThumbnailGenerator.generate(for: sandboxURL)
                 let info = await VideoImportService.videoInfo(for: sandboxURL)

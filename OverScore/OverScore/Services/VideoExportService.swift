@@ -101,14 +101,23 @@ final class VideoExportService {
             .appendingPathExtension("mp4")
 
         if match.skipOverlay {
-            // オーバーレイなし: Passthroughで高速エクスポート
+            // オーバーレイなし: H.264/SDR で揃っていれば Passthrough で高速エクスポート、
+            // それ以外（HEVC・ProRes・HDR・形式混在）は互換性のため H.264 へ再エンコード
+            let passthrough = await VideoCompositionBuilder.canPassthrough(urls: urls)
+            if isCancelled {
+                throw ExportError.cancelled
+            }
+
             guard let session = AVAssetExportSession(
                 asset: result.composition,
-                presetName: AVAssetExportPresetPassthrough
+                presetName: passthrough ? AVAssetExportPresetPassthrough : AVAssetExportPresetHighestQuality
             ) else {
                 throw ExportError.exportSessionCreationFailed
             }
 
+            if !passthrough {
+                session.videoComposition = VideoCompositionBuilder.makeVideoCompositionWithoutOverlay(result: result)
+            }
             session.outputURL = outputURL
             session.outputFileType = .mp4
 

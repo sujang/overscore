@@ -177,7 +177,8 @@ struct MatchSetupView: View {
                 PhotosPicker(
                     selection: $selectedItems,
                     maxSelectionCount: 10,
-                    matching: .videos
+                    matching: .videos,
+                    preferredItemEncoding: .current
                 ) {
                     Label(
                         isImporting ? String(localized: "読み込み中...") : String(localized: "写真ライブラリから追加"),
@@ -291,8 +292,8 @@ struct MatchSetupView: View {
                 }
 
                 // VideoTransferable が Documents/Videos/ へ直接取り込み済み
+                let originalName = movie.originalFileName
                 let sandboxURL = movie.url
-                let originalName = sandboxURL.lastPathComponent
                 let creationDate = await VideoImportService.creationDate(for: sandboxURL)
                 let thumb = await ThumbnailGenerator.generate(for: sandboxURL)
                 await MainActor.run {
@@ -364,8 +365,12 @@ struct MatchSetupView: View {
     }
 }
 
+/// 写真ライブラリから受け取った動画。受け取り時に Documents/Videos/ へ直接コピーする。
+/// PhotosPicker 側で `preferredItemEncoding: .current` を指定し、HEVC→H.264 のトランスコードを避けること。
 struct VideoTransferable: Transferable {
+    /// Documents/Videos/ 内のコピー先
     let url: URL
+    let originalFileName: String
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(contentType: .movie) { video in
@@ -384,7 +389,7 @@ struct VideoTransferable: Transferable {
                 to: destination,
                 canMove: !received.isOriginalFile
             )
-            return Self(url: destination)
+            return Self(url: destination, originalFileName: received.file.lastPathComponent)
         }
     }
 }
