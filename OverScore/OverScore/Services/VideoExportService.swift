@@ -101,16 +101,23 @@ final class VideoExportService {
             .appendingPathExtension("mp4")
 
         if match.skipOverlay {
-            // オーバーレイなし: H.264/SDR で揃っていれば Passthrough で高速エクスポート、
-            // それ以外（HEVC・ProRes・HDR・形式混在）は互換性のため H.264 へ再エンコード
-            let passthrough = await VideoCompositionBuilder.canPassthrough(urls: urls)
+            // オーバーレイなし: 素材が出力コーデック（通常 H.264、4K60 等は HEVC）・SDR で揃っていれば
+            // Passthrough で高速エクスポート、それ以外は再エンコードして出力を揃える
+            let reencodePreset = VideoCompositionBuilder.exportPresetName(
+                renderSize: videoSize,
+                frameDuration: result.frameDuration
+            )
+            let codec = reencodePreset == AVAssetExportPresetHEVCHighestQuality
+                ? kCMVideoCodecType_HEVC
+                : kCMVideoCodecType_H264
+            let passthrough = await VideoCompositionBuilder.canPassthrough(urls: urls, codec: codec)
             if isCancelled {
                 throw ExportError.cancelled
             }
 
             guard let session = AVAssetExportSession(
                 asset: result.composition,
-                presetName: passthrough ? AVAssetExportPresetPassthrough : AVAssetExportPresetHighestQuality
+                presetName: passthrough ? AVAssetExportPresetPassthrough : reencodePreset
             ) else {
                 throw ExportError.exportSessionCreationFailed
             }
@@ -180,7 +187,10 @@ final class VideoExportService {
 
         guard let session = AVAssetExportSession(
             asset: result.composition,
-            presetName: AVAssetExportPresetHighestQuality
+            presetName: VideoCompositionBuilder.exportPresetName(
+                renderSize: videoComposition.renderSize,
+                frameDuration: videoComposition.frameDuration
+            )
         ) else {
             throw ExportError.exportSessionCreationFailed
         }
