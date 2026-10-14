@@ -3,6 +3,7 @@ import SwiftData
 import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
+import os
 
 struct VideoEntry: Identifiable {
     let id = UUID()
@@ -287,7 +288,7 @@ struct MatchSetupView: View {
 
         for item in items {
             do {
-                guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
+                guard let movie = try await VideoTransferable.load(from: item) else {
                     continue
                 }
 
@@ -365,31 +366,108 @@ struct MatchSetupView: View {
     }
 }
 
-/// 写真ライブラリから受け取った動画。受け取り時に Documents/Videos/ へ直接コピーする。
+/// 写真ライブラリから受け取った動画。Documents/Videos/ へ直接取り込み済み。
 /// PhotosPicker 側で `preferredItemEncoding: .current` を指定し、HEVC→H.264 のトランスコードを避けること。
-struct VideoTransferable: Transferable {
-    /// Documents/Videos/ 内のコピー先
+struct VideoTransferable {
+    /// Documents/Videos/ 内の取り込み先
     let url: URL
     let originalFileName: String
 
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "OverScore",
+        category: "VideoImport"
+    )
+
+    /// 写真ライブラリの動画を、元の形式のまま Documents/Videos/ へ取り込む。
+    ///
+    /// `.movie` だけを要求すると、元が MP4 でも写真ライブラリ側で QuickTime として
+    /// 書き出し直されることがあり、数GBの動画で取り込みが極端に遅くなる。
+    /// そのためアイテムが最初に挙げる形式（元の形式）を明示して受け取る。
+    static func load(from item: PhotosPickerItem) async throws -> VideoTransferable? {
+        let supportedTypes = item.supportedContentTypes
+        let requestedType = supportedTypes.first { $0.conforms(to: .movie) } ?? .movie
+        logger.notice("""
+            supportedContentTypes=[\(supportedTypes.map(\.identifier).joined(separator: ", "), privacy: .public)] \
+            requested=\(requestedType.identifier, privacy: .public)
+            """)
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let video: VideoTransferable?
+        if requestedType == .mpeg4Movie {
+            video = try await item.loadTransferable(type: ReceivedVideo<MPEG4Movie>.self)?.video
+        } else if requestedType == .quickTimeMovie {
+            video = try await item.loadTransferable(type: ReceivedVideo<QuickTimeMovie>.self)?.video
+        } else {
+            video = try await item.loadTransferable(type: ReceivedVideo<AnyMovie>.self)?.video
+        }
+        logger.notice("loadTransferable elapsed=\(start.duration(to: clock.now).description, privacy: .public)")
+
+        if let video {
+            await logFileDetails(of: video.url)
+        }
+        return video
+    }
+
+    /// 受け取ったファイルを Documents/Videos/ へ引き取る。
+    /// received.file はクロージャを抜けると破棄されるため、importing の中で呼ぶこと。
+    fileprivate static func adopt(_ received: ReceivedTransferredFile) throws -> VideoTransferable {
+        let fileSize = (try? received.file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        logger.notice("""
+            received file=\(received.file.lastPathComponent, privacy: .public) \
+            size=\(fileSize, privacy: .public) isOriginalFile=\(received.isOriginalFile, privacy: .public)
+            """)
+
+        let destination = try VideoImportService.makeSandboxURL(
+            pathExtension: received.file.pathExtension
+        )
+        // isOriginalFile のときは破棄用の複製ではなくユーザーの元ファイルなので move しない
+        try VideoImportService.adoptFile(
+            at: received.file,
+            to: destination,
+            canMove: !received.isOriginalFile
+        )
+        return VideoTransferable(url: destination, originalFileName: received.file.lastPathComponent)
+    }
+
+    /// 取り込んだファイルのコーデック・解像度を記録する（変換されたかの調査用）
+    private static func logFileDetails(of url: URL) async {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let (formatDescriptions, naturalSize) = try? await track.load(.formatDescriptions, .naturalSize)
+        else {
+            logger.error("imported file has no readable video track")
+            return
+        }
+        let codecs = formatDescriptions.map { fourCCString(CMFormatDescriptionGetMediaSubType($0)) }
+        logger.notice("""
+            imported codec=\(codecs.joined(separator: ","), privacy: .public) \
+            size=\(Int(naturalSize.width), privacy: .public)x\(Int(naturalSize.height), privacy: .public)
+            """)
+    }
+
+    private static func fourCCString(_ code: FourCharCode) -> String {
+        let bytes = [24, 16, 8, 0].map { UInt8((code >> $0) & 0xFF) }
+        return String(bytes: bytes, encoding: .ascii) ?? String(code)
+    }
+}
+
+/// 写真ライブラリから要求する動画形式
+protocol PickedMovieType {
+    static var contentType: UTType { get }
+}
+
+enum MPEG4Movie: PickedMovieType { static let contentType = UTType.mpeg4Movie }
+enum QuickTimeMovie: PickedMovieType { static let contentType = UTType.quickTimeMovie }
+enum AnyMovie: PickedMovieType { static let contentType = UTType.movie }
+
+/// 指定形式で写真ライブラリから受け取るための Transferable
+private struct ReceivedVideo<MovieType: PickedMovieType>: Transferable {
+    let video: VideoTransferable
+
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(contentType: .movie) { video in
-            SentTransferredFile(video.url)
-        } importing: { received in
-            // 一時ファイルを経由せず Documents/Videos/ へ直接取り込む。
-            // 以前は tmp に複製してから copyToSandbox でもう一度複製しており、
-            // 数GBの試合動画をフルコピー2回ぶん余計に書いていた。
-            // received.file はこのクロージャを抜けると破棄されるため、ここで引き取る。
-            let destination = try VideoImportService.makeSandboxURL(
-                pathExtension: received.file.pathExtension
-            )
-            // isOriginalFile のときは破棄用の複製ではなくユーザーの元ファイルなので move しない
-            try VideoImportService.adoptFile(
-                at: received.file,
-                to: destination,
-                canMove: !received.isOriginalFile
-            )
-            return Self(url: destination, originalFileName: received.file.lastPathComponent)
+        FileRepresentation(importedContentType: MovieType.contentType) { received in
+            Self(video: try VideoTransferable.adopt(received))
         }
     }
 }

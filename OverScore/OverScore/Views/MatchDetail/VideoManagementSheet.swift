@@ -213,7 +213,7 @@ struct VideoManagementSheet: View {
 
         for item in items {
             do {
-                guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else { continue }
+                guard let movie = try await VideoTransferable.load(from: item) else { continue }
                 // VideoTransferable が Documents/Videos/ へ直接取り込み済み
                 let originalName = movie.originalFileName
                 let sandboxURL = movie.url
