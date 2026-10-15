@@ -11,8 +11,36 @@ final class ExportViewModel {
     var savedToPhotos = false
     var saveError: String?
 
+    /// 確認画面に表示する出力の見込み
+    struct OutputPreview {
+        let renderSize: CGSize
+        let frameRate: Double
+        /// 見積もれなかった場合は nil
+        let estimatedFileSize: Int64?
+    }
+
+    private(set) var outputPreview: OutputPreview?
+    private(set) var isLoadingOutputPreview = false
+
     init(match: Match) {
         self.match = match
+    }
+
+    func loadOutputPreview() async {
+        guard outputPreview == nil, !isLoadingOutputPreview else { return }
+        isLoadingOutputPreview = true
+        defer { isLoadingOutputPreview = false }
+
+        guard let plan = try? await VideoExportService.makePlan(
+            urls: match.videoURLs,
+            skipOverlay: match.skipOverlay
+        ) else { return }
+        let fileSize = await VideoExportService.estimatedFileSize(for: plan)
+        outputPreview = OutputPreview(
+            renderSize: plan.renderSize,
+            frameRate: plan.frameRate,
+            estimatedFileSize: fileSize
+        )
     }
 
     var progress: Float { exportService.progress }

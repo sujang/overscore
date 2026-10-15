@@ -82,10 +82,77 @@ final class VideoExportService {
         exportedURL = nil
     }
 
+    // MARK: - Export Plan
+
+    /// 出力の形式。確認画面の表示と実際のエクスポートで同じ判断を使うためにまとめている。
+    struct ExportPlan {
+        let result: VideoCompositionBuilder.Result
+        let presetName: String
+        /// 出力のフレーム間隔（Passthrough の場合は素材のもの）
+        let frameDuration: CMTime
+
+        var renderSize: CGSize { result.videoSize }
+        var isPassthrough: Bool { presetName == AVAssetExportPresetPassthrough }
+        var frameRate: Double { frameDuration.seconds > 0 ? 1.0 / frameDuration.seconds : 0 }
+    }
+
+    static func makePlan(urls: [URL], skipOverlay: Bool) async throws -> ExportPlan {
+        let result = try await VideoCompositionBuilder.build(from: urls)
+
+        if skipOverlay {
+            // オーバーレイなし: 素材が出力コーデック（通常 H.264、4K60 等は HEVC）・SDR で揃っていれば
+            // Passthrough で高速エクスポート、それ以外は再エンコードして出力を揃える
+            let reencodePreset = VideoCompositionBuilder.exportPresetName(
+                renderSize: result.videoSize,
+                frameDuration: result.frameDuration
+            )
+            let codec = reencodePreset == AVAssetExportPresetHEVCHighestQuality
+                ? kCMVideoCodecType_HEVC
+                : kCMVideoCodecType_H264
+            let passthrough = await VideoCompositionBuilder.canPassthrough(urls: urls, codec: codec)
+            return ExportPlan(
+                result: result,
+                presetName: passthrough ? AVAssetExportPresetPassthrough : reencodePreset,
+                frameDuration: result.frameDuration
+            )
+        }
+
+        // オーバーレイ合成は重いので高フレームレート素材は 60fps に丸める
+        let frameDuration = VideoCompositionBuilder.clampedFrameDuration(result.frameDuration)
+        return ExportPlan(
+            result: result,
+            presetName: VideoCompositionBuilder.exportPresetName(
+                renderSize: result.videoSize,
+                frameDuration: frameDuration
+            ),
+            frameDuration: frameDuration
+        )
+    }
+
+    /// 出力ファイルサイズの見積もり（バイト）。見積もれなければ nil。
+    /// スコアボードのレイヤーはサイズにほぼ影響しないため、合成なしの videoComposition で見積もる。
+    static func estimatedFileSize(for plan: ExportPlan) async -> Int64? {
+        guard let session = AVAssetExportSession(
+            asset: plan.result.composition,
+            presetName: plan.presetName
+        ) else { return nil }
+
+        if !plan.isPassthrough {
+            let videoComposition = VideoCompositionBuilder.makeVideoCompositionWithoutOverlay(result: plan.result)
+            videoComposition.frameDuration = plan.frameDuration
+            session.videoComposition = videoComposition
+        }
+        session.outputFileType = .mp4
+
+        guard let bytes = try? await session.estimatedOutputFileLengthInBytes, bytes > 0 else { return nil }
+        return bytes
+    }
+
     // MARK: - Core Export Pipeline
 
     private func performExport(urls: [URL], match: Match) async throws -> URL {
-        let result = try await VideoCompositionBuilder.build(from: urls)
+        let plan = try await Self.makePlan(urls: urls, skipOverlay: match.skipOverlay)
+        let result = plan.result
 
         // 構築中にキャンセルされていたらここで脱出
         // （build自体は中断できないため、セッション生成前の早期チェックで対応）
@@ -101,28 +168,14 @@ final class VideoExportService {
             .appendingPathExtension("mp4")
 
         if match.skipOverlay {
-            // オーバーレイなし: 素材が出力コーデック（通常 H.264、4K60 等は HEVC）・SDR で揃っていれば
-            // Passthrough で高速エクスポート、それ以外は再エンコードして出力を揃える
-            let reencodePreset = VideoCompositionBuilder.exportPresetName(
-                renderSize: videoSize,
-                frameDuration: result.frameDuration
-            )
-            let codec = reencodePreset == AVAssetExportPresetHEVCHighestQuality
-                ? kCMVideoCodecType_HEVC
-                : kCMVideoCodecType_H264
-            let passthrough = await VideoCompositionBuilder.canPassthrough(urls: urls, codec: codec)
-            if isCancelled {
-                throw ExportError.cancelled
-            }
-
             guard let session = AVAssetExportSession(
                 asset: result.composition,
-                presetName: passthrough ? AVAssetExportPresetPassthrough : reencodePreset
+                presetName: plan.presetName
             ) else {
                 throw ExportError.exportSessionCreationFailed
             }
 
-            if !passthrough {
+            if !plan.isPassthrough {
                 session.videoComposition = VideoCompositionBuilder.makeVideoCompositionWithoutOverlay(result: result)
             }
             session.outputURL = outputURL
@@ -187,10 +240,7 @@ final class VideoExportService {
 
         guard let session = AVAssetExportSession(
             asset: result.composition,
-            presetName: VideoCompositionBuilder.exportPresetName(
-                renderSize: videoComposition.renderSize,
-                frameDuration: videoComposition.frameDuration
-            )
+            presetName: plan.presetName
         ) else {
             throw ExportError.exportSessionCreationFailed
         }
