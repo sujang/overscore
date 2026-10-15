@@ -89,6 +89,7 @@ struct VideoImportService {
     struct VideoInfo {
         let dimensions: CGSize
         let frameRate: Float
+        let fileSize: Int64?
     }
 
     /// 動画ファイルから表示用のメタ情報（補正済み解像度・フレームレート）を取得する。
@@ -107,7 +108,8 @@ struct VideoImportService {
             let frameDuration = try await VideoCompositionBuilder.detectFrameDuration(of: track, in: asset)
             let frameRate: Float = frameDuration.seconds > 0 ? Float(1.0 / frameDuration.seconds) : 0
             let dimensions = VideoCompositionBuilder.correctedSize(naturalSize: naturalSize, transform: transform)
-            return VideoInfo(dimensions: dimensions, frameRate: frameRate)
+            let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+            return VideoInfo(dimensions: dimensions, frameRate: frameRate, fileSize: fileSize)
         } catch {
             return nil
         }

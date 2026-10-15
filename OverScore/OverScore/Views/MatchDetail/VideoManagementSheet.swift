@@ -53,10 +53,11 @@ struct VideoManagementSheet: View {
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
-                                    if let info = videoInfoText(for: entry) {
+                                    if let info = entry.infoText {
                                         Text(info)
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
+                                            .monospacedDigit()
                                     }
                                 }
                             }
@@ -181,24 +182,12 @@ struct VideoManagementSheet: View {
                 thumbnail: thumb,
                 creationDate: date,
                 dimensions: info?.dimensions,
-                frameRate: info?.frameRate
+                frameRate: info?.frameRate,
+                fileSize: info?.fileSize
             ))
         }
         videoEntries = entries
         didLoad = true
-    }
-
-    // MARK: - Display Helpers
-
-    private func videoInfoText(for entry: VideoEntry) -> String? {
-        var parts: [String] = []
-        if let size = entry.dimensions {
-            parts.append("\(Int(size.width))×\(Int(size.height))")
-        }
-        if let fps = entry.frameRate, fps > 0 {
-            parts.append(String(format: "%.2f fps", fps))
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     // MARK: - Import from Photos Library
@@ -227,7 +216,8 @@ struct VideoManagementSheet: View {
                         thumbnail: thumb,
                         creationDate: creationDate,
                         dimensions: info?.dimensions,
-                        frameRate: info?.frameRate
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
                     ))
                 }
             } catch {
@@ -260,7 +250,8 @@ struct VideoManagementSheet: View {
                         thumbnail: thumb,
                         creationDate: creationDate,
                         dimensions: info?.dimensions,
-                        frameRate: info?.frameRate
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
                     ))
                 }
             } catch {

@@ -13,6 +13,22 @@ struct VideoEntry: Identifiable {
     var creationDate: Date?
     var dimensions: CGSize?
     var frameRate: Float?
+    var fileSize: Int64?
+
+    /// 一覧に表示する詳細情報（例: "2.94 GB · 2560×1440 · 29.97 fps"）
+    var infoText: String? {
+        var parts: [String] = []
+        if let fileSize {
+            parts.append(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file))
+        }
+        if let dimensions {
+            parts.append("\(Int(dimensions.width))×\(Int(dimensions.height))")
+        }
+        if let frameRate, frameRate > 0 {
+            parts.append("\(frameRate.formatted(.number.precision(.fractionLength(0...2)))) fps")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 }
 
 struct SportSelectView: View {
@@ -165,6 +181,12 @@ struct MatchSetupView: View {
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
+                                if let info = entry.infoText {
+                                    Text(info)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                }
                             }
                         }
                     }
@@ -297,8 +319,17 @@ struct MatchSetupView: View {
                 let sandboxURL = movie.url
                 let creationDate = await VideoImportService.creationDate(for: sandboxURL)
                 let thumb = await ThumbnailGenerator.generate(for: sandboxURL)
+                let info = await VideoImportService.videoInfo(for: sandboxURL)
                 await MainActor.run {
-                    videoEntries.append(VideoEntry(url: sandboxURL, originalFileName: originalName, thumbnail: thumb, creationDate: creationDate))
+                    videoEntries.append(VideoEntry(
+                        url: sandboxURL,
+                        originalFileName: originalName,
+                        thumbnail: thumb,
+                        creationDate: creationDate,
+                        dimensions: info?.dimensions,
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
+                    ))
                 }
             } catch {
                 await MainActor.run {
@@ -322,8 +353,17 @@ struct MatchSetupView: View {
                 let creationDate = await VideoImportService.creationDate(for: url)
                 let sandboxURL = try await VideoImportService.copyToSandbox(from: url)
                 let thumb = await ThumbnailGenerator.generate(for: sandboxURL)
+                let info = await VideoImportService.videoInfo(for: sandboxURL)
                 await MainActor.run {
-                    videoEntries.append(VideoEntry(url: sandboxURL, originalFileName: originalName, thumbnail: thumb, creationDate: creationDate))
+                    videoEntries.append(VideoEntry(
+                        url: sandboxURL,
+                        originalFileName: originalName,
+                        thumbnail: thumb,
+                        creationDate: creationDate,
+                        dimensions: info?.dimensions,
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
+                    ))
                 }
             } catch {
                 await MainActor.run {
