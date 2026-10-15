@@ -125,6 +125,7 @@ enum VideoCompositionBuilder {
         videoComposition.renderSize = result.videoSize
         // オーバーレイ合成は重いので高フレームレート素材は 60fps に丸める
         videoComposition.frameDuration = clampedFrameDuration(result.frameDuration)
+        applySDRColorProperties(to: videoComposition)
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
             postProcessingAsVideoLayer: videoLayer,
             in: parentLayer
@@ -155,6 +156,7 @@ enum VideoCompositionBuilder {
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = result.videoSize
         videoComposition.frameDuration = result.frameDuration
+        applySDRColorProperties(to: videoComposition)
 
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = CMTimeRange(start: .zero, duration: result.duration)
@@ -170,6 +172,70 @@ enum VideoCompositionBuilder {
 
         videoComposition.instructions = [instruction]
         return videoComposition
+    }
+
+    // MARK: - Color
+
+    /// 出力を Rec.709 (SDR) に固定する。
+    /// HDR (HLG / Dolby Vision) 素材はここで SDR にトーンマッピングされ、H.264 出力やスコアボードの色と整合する。
+    private static func applySDRColorProperties(to videoComposition: AVMutableVideoComposition) {
+        videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+        videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+        videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+    }
+
+    // MARK: - Export Preset
+
+    /// H.264 プリセットが元のフレームレートを保てる処理量の上限（H.264 Level 5.1 相当、マクロブロック/秒）。
+    /// AVAssetExportPresetHighestQuality はこれを超えるとフレームを間引く。
+    /// 実測: 4K60 → 30fps、4K50 → 25fps に落ち、1440p60 / 2.7K60 / 4K30 は維持された。
+    private static let h264MaxMacroblocksPerSecond: Double = 983_040
+
+    /// H.264 では元のフレームレートを保てず、HEVC で出力する必要があるか。
+    static func requiresHEVC(renderSize: CGSize, frameDuration: CMTime) -> Bool {
+        guard frameDuration.isNumeric, frameDuration.seconds > 0 else { return false }
+        let macroblocksPerFrame = (renderSize.width / 16).rounded(.up) * (renderSize.height / 16).rounded(.up)
+        return macroblocksPerFrame / frameDuration.seconds > h264MaxMacroblocksPerSecond
+    }
+
+    /// 再エンコード時のプリセット。互換性のため基本は H.264、
+    /// 4K60 など H.264 ではフレームが間引かれる素材だけ HEVC にする。
+    static func exportPresetName(renderSize: CGSize, frameDuration: CMTime) -> String {
+        requiresHEVC(renderSize: renderSize, frameDuration: frameDuration)
+            ? AVAssetExportPresetHEVCHighestQuality
+            : AVAssetExportPresetHighestQuality
+    }
+
+    // MARK: - Passthrough Check
+
+    /// 再エンコードせずに MP4 へ連結出力してよいかを判定する。
+    /// 全素材が指定コーデック・SDR・同一解像度・同一向きの場合のみ true。
+    /// それ以外（ProRes / HDR / 形式混在など）は再エンコードして出力を揃える。
+    static func canPassthrough(urls: [URL], codec: CMVideoCodecType) async -> Bool {
+        var reference: (size: CGSize, transform: CGAffineTransform)?
+
+        for url in urls {
+            let asset = AVURLAsset(url: url)
+            do {
+                guard let track = try await asset.loadTracks(withMediaType: .video).first else { return false }
+                let (formatDescriptions, characteristics, naturalSize, transform) = try await track.load(
+                    .formatDescriptions, .mediaCharacteristics, .naturalSize, .preferredTransform
+                )
+                let matchesCodec = !formatDescriptions.isEmpty && formatDescriptions.allSatisfy {
+                    CMFormatDescriptionGetMediaSubType($0) == codec
+                }
+                guard matchesCodec, !characteristics.contains(.containsHDRVideo) else { return false }
+
+                if let reference {
+                    guard reference.size == naturalSize, reference.transform == transform else { return false }
+                } else {
+                    reference = (naturalSize, transform)
+                }
+            } catch {
+                return false
+            }
+        }
+        return true
     }
 
     // MARK: - Frame Rate Detection

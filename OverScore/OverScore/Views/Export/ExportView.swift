@@ -67,6 +67,8 @@ struct ExportView: View {
                 summaryRow(label: String(localized: "動画"), value: String(localized: "\(match.videoURLs.count)本"))
                 Divider()
                 summaryRow(label: String(localized: "スコアボード"), value: match.skipOverlay ? String(localized: "なし（動画のみ結合）") : String(localized: "あり"))
+                Divider()
+                outputPreviewRows(vm: vm)
             }
             .padding()
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
@@ -87,6 +89,33 @@ struct ExportView: View {
             Spacer()
         }
         .padding()
+        .task { await vm.loadOutputPreview() }
+    }
+
+    /// エクスポート後の動画の見込み（解像度・FPS・予想サイズ）
+    @ViewBuilder
+    private func outputPreviewRows(vm: ExportViewModel) -> some View {
+        let preview = vm.outputPreview
+        let placeholder = vm.isLoadingOutputPreview ? String(localized: "計算中...") : "—"
+
+        summaryRow(
+            label: String(localized: "解像度"),
+            value: preview.map { "\(Int($0.renderSize.width))×\(Int($0.renderSize.height))" } ?? placeholder
+        )
+        Divider()
+        summaryRow(
+            label: String(localized: "フレームレート"),
+            value: preview.map { "\($0.frameRate.formatted(.number.precision(.fractionLength(0...2)))) fps" } ?? placeholder
+        )
+        Divider()
+        summaryRow(
+            label: String(localized: "ファイルサイズ（予想）"),
+            value: preview.map { preview in
+                preview.estimatedFileSize.map {
+                    String(localized: "約 \(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file))")
+                } ?? "—"
+            } ?? placeholder
+        )
     }
 
     private func summaryRow(label: String, value: String) -> some View {

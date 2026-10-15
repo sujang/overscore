@@ -9,6 +9,7 @@ struct VideoManagementSheet: View {
     @State private var videoEntries: [VideoEntry] = []
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var isImporting = false
+    @State private var importFraction: Double?
     @State private var errorMessage: String?
     @State private var showFileImporter = false
     @State private var didLoad = false
@@ -52,10 +53,11 @@ struct VideoManagementSheet: View {
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
-                                    if let info = videoInfoText(for: entry) {
+                                    if let info = entry.infoText {
                                         Text(info)
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
+                                            .monospacedDigit()
                                     }
                                 }
                             }
@@ -79,7 +81,8 @@ struct VideoManagementSheet: View {
                     PhotosPicker(
                         selection: $selectedItems,
                         maxSelectionCount: 10,
-                        matching: .videos
+                        matching: .videos,
+                        preferredItemEncoding: .current
                     ) {
                         Label(
                             isImporting ? "読み込み中..." : "写真ライブラリから追加",
@@ -96,12 +99,7 @@ struct VideoManagementSheet: View {
                     .disabled(isImporting)
 
                     if isImporting {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("動画を読み込み中...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        VideoImportProgressView(fraction: importFraction)
                     }
                 }
 
@@ -184,24 +182,12 @@ struct VideoManagementSheet: View {
                 thumbnail: thumb,
                 creationDate: date,
                 dimensions: info?.dimensions,
-                frameRate: info?.frameRate
+                frameRate: info?.frameRate,
+                fileSize: info?.fileSize
             ))
         }
         videoEntries = entries
         didLoad = true
-    }
-
-    // MARK: - Display Helpers
-
-    private func videoInfoText(for entry: VideoEntry) -> String? {
-        var parts: [String] = []
-        if let size = entry.dimensions {
-            parts.append("\(Int(size.width))×\(Int(size.height))")
-        }
-        if let fps = entry.frameRate, fps > 0 {
-            parts.append(String(format: "%.2f fps", fps))
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     // MARK: - Import from Photos Library
@@ -212,10 +198,15 @@ struct VideoManagementSheet: View {
 
         for item in items {
             do {
-                guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else { continue }
-                let originalName = movie.url.lastPathComponent
-                let creationDate = await VideoImportService.creationDate(for: movie.url)
-                let sandboxURL = try await VideoImportService.copyToSandbox(from: movie.url)
+                importFraction = nil
+                guard let movie = try await VideoTransferable.load(
+                    from: item,
+                    onProgress: { importFraction = $0 }
+                ) else { continue }
+                // VideoTransferable が Documents/Videos/ へ直接取り込み済み
+                let originalName = movie.originalFileName
+                let sandboxURL = movie.url
+                let creationDate = await VideoImportService.creationDate(for: sandboxURL)
                 let thumb = await ThumbnailGenerator.generate(for: sandboxURL)
                 let info = await VideoImportService.videoInfo(for: sandboxURL)
                 await MainActor.run {
@@ -225,7 +216,8 @@ struct VideoManagementSheet: View {
                         thumbnail: thumb,
                         creationDate: creationDate,
                         dimensions: info?.dimensions,
-                        frameRate: info?.frameRate
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
                     ))
                 }
             } catch {
@@ -258,7 +250,8 @@ struct VideoManagementSheet: View {
                         thumbnail: thumb,
                         creationDate: creationDate,
                         dimensions: info?.dimensions,
-                        frameRate: info?.frameRate
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
                     ))
                 }
             } catch {

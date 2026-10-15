@@ -3,6 +3,7 @@ import SwiftData
 import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
+import os
 
 struct VideoEntry: Identifiable {
     let id = UUID()
@@ -12,6 +13,22 @@ struct VideoEntry: Identifiable {
     var creationDate: Date?
     var dimensions: CGSize?
     var frameRate: Float?
+    var fileSize: Int64?
+
+    /// 一覧に表示する詳細情報（例: "2.94 GB · 2560×1440 · 29.97 fps"）
+    var infoText: String? {
+        var parts: [String] = []
+        if let fileSize {
+            parts.append(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file))
+        }
+        if let dimensions {
+            parts.append("\(Int(dimensions.width))×\(Int(dimensions.height))")
+        }
+        if let frameRate, frameRate > 0 {
+            parts.append("\(frameRate.formatted(.number.precision(.fractionLength(0...2)))) fps")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 }
 
 struct SportSelectView: View {
@@ -91,6 +108,7 @@ struct MatchSetupView: View {
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var videoEntries: [VideoEntry] = []
     @State private var isImporting = false
+    @State private var importFraction: Double?
     @State private var errorMessage: String?
     @State private var showFileImporter = false
     @State private var createdMatch: Match?
@@ -163,6 +181,12 @@ struct MatchSetupView: View {
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
+                                if let info = entry.infoText {
+                                    Text(info)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                }
                             }
                         }
                     }
@@ -177,7 +201,8 @@ struct MatchSetupView: View {
                 PhotosPicker(
                     selection: $selectedItems,
                     maxSelectionCount: 10,
-                    matching: .videos
+                    matching: .videos,
+                    preferredItemEncoding: .current
                 ) {
                     Label(
                         isImporting ? String(localized: "読み込み中...") : String(localized: "写真ライブラリから追加"),
@@ -197,12 +222,7 @@ struct MatchSetupView: View {
                 .disabled(isImporting)
 
                 if isImporting {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("動画を読み込み中...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    VideoImportProgressView(fraction: importFraction)
                 }
             } header: {
                 Text("試合動画")
@@ -286,16 +306,30 @@ struct MatchSetupView: View {
 
         for item in items {
             do {
-                guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
+                importFraction = nil
+                guard let movie = try await VideoTransferable.load(
+                    from: item,
+                    onProgress: { importFraction = $0 }
+                ) else {
                     continue
                 }
 
-                let originalName = movie.url.lastPathComponent
-                let creationDate = await VideoImportService.creationDate(for: movie.url)
-                let sandboxURL = try await VideoImportService.copyToSandbox(from: movie.url)
+                // VideoTransferable が Documents/Videos/ へ直接取り込み済み
+                let originalName = movie.originalFileName
+                let sandboxURL = movie.url
+                let creationDate = await VideoImportService.creationDate(for: sandboxURL)
                 let thumb = await ThumbnailGenerator.generate(for: sandboxURL)
+                let info = await VideoImportService.videoInfo(for: sandboxURL)
                 await MainActor.run {
-                    videoEntries.append(VideoEntry(url: sandboxURL, originalFileName: originalName, thumbnail: thumb, creationDate: creationDate))
+                    videoEntries.append(VideoEntry(
+                        url: sandboxURL,
+                        originalFileName: originalName,
+                        thumbnail: thumb,
+                        creationDate: creationDate,
+                        dimensions: info?.dimensions,
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
+                    ))
                 }
             } catch {
                 await MainActor.run {
@@ -319,8 +353,17 @@ struct MatchSetupView: View {
                 let creationDate = await VideoImportService.creationDate(for: url)
                 let sandboxURL = try await VideoImportService.copyToSandbox(from: url)
                 let thumb = await ThumbnailGenerator.generate(for: sandboxURL)
+                let info = await VideoImportService.videoInfo(for: sandboxURL)
                 await MainActor.run {
-                    videoEntries.append(VideoEntry(url: sandboxURL, originalFileName: originalName, thumbnail: thumb, creationDate: creationDate))
+                    videoEntries.append(VideoEntry(
+                        url: sandboxURL,
+                        originalFileName: originalName,
+                        thumbnail: thumb,
+                        creationDate: creationDate,
+                        dimensions: info?.dimensions,
+                        frameRate: info?.frameRate,
+                        fileSize: info?.fileSize
+                    ))
                 }
             } catch {
                 await MainActor.run {
@@ -363,18 +406,164 @@ struct MatchSetupView: View {
     }
 }
 
-struct VideoTransferable: Transferable {
+/// 写真ライブラリから受け取った動画。Documents/Videos/ へ直接取り込み済み。
+/// PhotosPicker 側で `preferredItemEncoding: .current` を指定し、HEVC→H.264 のトランスコードを避けること。
+struct VideoTransferable {
+    /// Documents/Videos/ 内の取り込み先
     let url: URL
+    let originalFileName: String
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "OverScore",
+        category: "VideoImport"
+    )
+
+    /// 写真ライブラリの動画を、元の形式のまま Documents/Videos/ へ取り込む。
+    ///
+    /// `.movie` だけを要求すると、元が MP4 でも写真ライブラリ側で QuickTime として
+    /// 書き出し直されることがあり、数GBの動画で取り込みが極端に遅くなる。
+    /// そのためアイテムが最初に挙げる形式（元の形式）を明示して受け取る。
+    ///
+    /// - Parameter onProgress: 写真ライブラリ側の書き出し進捗（0〜1）。
+    ///   写真アプリで編集済みの動画などは受け取り前に作り直されるため数分かかることがある。
+    static func load(
+        from item: PhotosPickerItem,
+        onProgress: @escaping @MainActor (Double) -> Void = { _ in }
+    ) async throws -> VideoTransferable? {
+        let supportedTypes = item.supportedContentTypes
+        let requestedType = supportedTypes.first { $0.conforms(to: .movie) } ?? .movie
+        logger.notice("""
+            supportedContentTypes=[\(supportedTypes.map(\.identifier).joined(separator: ", "), privacy: .public)] \
+            requested=\(requestedType.identifier, privacy: .public)
+            """)
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let video: VideoTransferable?
+        if requestedType == .mpeg4Movie {
+            video = try await loadTransferable(ReceivedVideo<MPEG4Movie>.self, from: item, onProgress: onProgress)?.video
+        } else if requestedType == .quickTimeMovie {
+            video = try await loadTransferable(ReceivedVideo<QuickTimeMovie>.self, from: item, onProgress: onProgress)?.video
+        } else {
+            video = try await loadTransferable(ReceivedVideo<AnyMovie>.self, from: item, onProgress: onProgress)?.video
+        }
+        logger.notice("loadTransferable elapsed=\(start.duration(to: clock.now).description, privacy: .public)")
+
+        if let video {
+            await logFileDetails(of: video.url)
+        }
+        return video
+    }
+
+    /// 進捗を通知しながら loadTransferable する。
+    /// async 版の loadTransferable は Progress を返さないため、completionHandler 版を包む。
+    private static func loadTransferable<T: Transferable>(
+        _ type: T.Type,
+        from item: PhotosPickerItem,
+        onProgress: @escaping @MainActor (Double) -> Void
+    ) async throws -> T? {
+        let observationBox = ProgressObservationBox()
+        defer { observationBox.observation?.invalidate() }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let progress = item.loadTransferable(type: type) { result in
+                continuation.resume(with: result)
+            }
+            observationBox.observation = progress.observe(\.fractionCompleted, options: [.initial, .new]) { progress, _ in
+                let fraction = progress.fractionCompleted
+                Task { @MainActor in onProgress(fraction) }
+            }
+        }
+    }
+
+    private final class ProgressObservationBox {
+        var observation: NSKeyValueObservation?
+    }
+
+    /// 受け取ったファイルを Documents/Videos/ へ引き取る。
+    /// received.file はクロージャを抜けると破棄されるため、importing の中で呼ぶこと。
+    fileprivate static func adopt(_ received: ReceivedTransferredFile) throws -> VideoTransferable {
+        let fileSize = (try? received.file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        logger.notice("""
+            received file=\(received.file.lastPathComponent, privacy: .public) \
+            size=\(fileSize, privacy: .public) isOriginalFile=\(received.isOriginalFile, privacy: .public)
+            """)
+
+        let destination = try VideoImportService.makeSandboxURL(
+            pathExtension: received.file.pathExtension
+        )
+        // isOriginalFile のときは破棄用の複製ではなくユーザーの元ファイルなので move しない
+        try VideoImportService.adoptFile(
+            at: received.file,
+            to: destination,
+            canMove: !received.isOriginalFile
+        )
+        return VideoTransferable(url: destination, originalFileName: received.file.lastPathComponent)
+    }
+
+    /// 取り込んだファイルのコーデック・解像度を記録する（変換されたかの調査用）
+    private static func logFileDetails(of url: URL) async {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let (formatDescriptions, naturalSize) = try? await track.load(.formatDescriptions, .naturalSize)
+        else {
+            logger.error("imported file has no readable video track")
+            return
+        }
+        let codecs = formatDescriptions.map { fourCCString(CMFormatDescriptionGetMediaSubType($0)) }
+        logger.notice("""
+            imported codec=\(codecs.joined(separator: ","), privacy: .public) \
+            size=\(Int(naturalSize.width), privacy: .public)x\(Int(naturalSize.height), privacy: .public)
+            """)
+    }
+
+    private static func fourCCString(_ code: FourCharCode) -> String {
+        let bytes = [24, 16, 8, 0].map { UInt8((code >> $0) & 0xFF) }
+        return String(bytes: bytes, encoding: .ascii) ?? String(code)
+    }
+}
+
+/// 写真ライブラリから要求する動画形式
+protocol PickedMovieType {
+    static var contentType: UTType { get }
+}
+
+enum MPEG4Movie: PickedMovieType { static let contentType = UTType.mpeg4Movie }
+enum QuickTimeMovie: PickedMovieType { static let contentType = UTType.quickTimeMovie }
+enum AnyMovie: PickedMovieType { static let contentType = UTType.movie }
+
+/// 指定形式で写真ライブラリから受け取るための Transferable
+private struct ReceivedVideo<MovieType: PickedMovieType>: Transferable {
+    let video: VideoTransferable
 
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(contentType: .movie) { video in
-            SentTransferredFile(video.url)
-        } importing: { received in
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension(received.file.pathExtension)
-            try FileManager.default.copyItem(at: received.file, to: tempURL)
-            return Self(url: tempURL)
+        FileRepresentation(importedContentType: MovieType.contentType) { received in
+            Self(video: try VideoTransferable.adopt(received))
+        }
+    }
+}
+
+/// 動画取り込み中の表示。写真ライブラリが進捗を報告している間はパーセントを表示する。
+struct VideoImportProgressView: View {
+    /// 0〜1。まだ進捗が届いていなければ nil
+    let fraction: Double?
+
+    var body: some View {
+        if let fraction, fraction > 0, fraction < 1 {
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: fraction)
+                Text("動画を読み込み中... \(Int(fraction * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        } else {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("動画を読み込み中...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
