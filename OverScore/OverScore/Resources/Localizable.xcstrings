@@ -3673,6 +3673,28 @@
         }
       }
     },
+    "動画を読み込み中... %lld%%": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading video... %lld%%"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동영상 불러오는 중... %lld%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载视频… %lld%%"
+          }
+        }
+      }
+    },
     "動画を読み込めませんでした": {
       "localizations": {
         "en": {

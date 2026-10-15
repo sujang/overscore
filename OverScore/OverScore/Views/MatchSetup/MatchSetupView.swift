@@ -92,6 +92,7 @@ struct MatchSetupView: View {
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var videoEntries: [VideoEntry] = []
     @State private var isImporting = false
+    @State private var importFraction: Double?
     @State private var errorMessage: String?
     @State private var showFileImporter = false
     @State private var createdMatch: Match?
@@ -199,12 +200,7 @@ struct MatchSetupView: View {
                 .disabled(isImporting)
 
                 if isImporting {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("動画を読み込み中...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    VideoImportProgressView(fraction: importFraction)
                 }
             } header: {
                 Text("試合動画")
@@ -288,7 +284,11 @@ struct MatchSetupView: View {
 
         for item in items {
             do {
-                guard let movie = try await VideoTransferable.load(from: item) else {
+                importFraction = nil
+                guard let movie = try await VideoTransferable.load(
+                    from: item,
+                    onProgress: { importFraction = $0 }
+                ) else {
                     continue
                 }
 
@@ -383,7 +383,13 @@ struct VideoTransferable {
     /// `.movie` だけを要求すると、元が MP4 でも写真ライブラリ側で QuickTime として
     /// 書き出し直されることがあり、数GBの動画で取り込みが極端に遅くなる。
     /// そのためアイテムが最初に挙げる形式（元の形式）を明示して受け取る。
-    static func load(from item: PhotosPickerItem) async throws -> VideoTransferable? {
+    ///
+    /// - Parameter onProgress: 写真ライブラリ側の書き出し進捗（0〜1）。
+    ///   写真アプリで編集済みの動画などは受け取り前に作り直されるため数分かかることがある。
+    static func load(
+        from item: PhotosPickerItem,
+        onProgress: @escaping @MainActor (Double) -> Void = { _ in }
+    ) async throws -> VideoTransferable? {
         let supportedTypes = item.supportedContentTypes
         let requestedType = supportedTypes.first { $0.conforms(to: .movie) } ?? .movie
         logger.notice("""
@@ -395,11 +401,11 @@ struct VideoTransferable {
         let start = clock.now
         let video: VideoTransferable?
         if requestedType == .mpeg4Movie {
-            video = try await item.loadTransferable(type: ReceivedVideo<MPEG4Movie>.self)?.video
+            video = try await loadTransferable(ReceivedVideo<MPEG4Movie>.self, from: item, onProgress: onProgress)?.video
         } else if requestedType == .quickTimeMovie {
-            video = try await item.loadTransferable(type: ReceivedVideo<QuickTimeMovie>.self)?.video
+            video = try await loadTransferable(ReceivedVideo<QuickTimeMovie>.self, from: item, onProgress: onProgress)?.video
         } else {
-            video = try await item.loadTransferable(type: ReceivedVideo<AnyMovie>.self)?.video
+            video = try await loadTransferable(ReceivedVideo<AnyMovie>.self, from: item, onProgress: onProgress)?.video
         }
         logger.notice("loadTransferable elapsed=\(start.duration(to: clock.now).description, privacy: .public)")
 
@@ -407,6 +413,31 @@ struct VideoTransferable {
             await logFileDetails(of: video.url)
         }
         return video
+    }
+
+    /// 進捗を通知しながら loadTransferable する。
+    /// async 版の loadTransferable は Progress を返さないため、completionHandler 版を包む。
+    private static func loadTransferable<T: Transferable>(
+        _ type: T.Type,
+        from item: PhotosPickerItem,
+        onProgress: @escaping @MainActor (Double) -> Void
+    ) async throws -> T? {
+        let observationBox = ProgressObservationBox()
+        defer { observationBox.observation?.invalidate() }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let progress = item.loadTransferable(type: type) { result in
+                continuation.resume(with: result)
+            }
+            observationBox.observation = progress.observe(\.fractionCompleted, options: [.initial, .new]) { progress, _ in
+                let fraction = progress.fractionCompleted
+                Task { @MainActor in onProgress(fraction) }
+            }
+        }
+    }
+
+    private final class ProgressObservationBox {
+        var observation: NSKeyValueObservation?
     }
 
     /// 受け取ったファイルを Documents/Videos/ へ引き取る。
@@ -468,6 +499,31 @@ private struct ReceivedVideo<MovieType: PickedMovieType>: Transferable {
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: MovieType.contentType) { received in
             Self(video: try VideoTransferable.adopt(received))
+        }
+    }
+}
+
+/// 動画取り込み中の表示。写真ライブラリが進捗を報告している間はパーセントを表示する。
+struct VideoImportProgressView: View {
+    /// 0〜1。まだ進捗が届いていなければ nil
+    let fraction: Double?
+
+    var body: some View {
+        if let fraction, fraction > 0, fraction < 1 {
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: fraction)
+                Text("動画を読み込み中... \(Int(fraction * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        } else {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("動画を読み込み中...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

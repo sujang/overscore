@@ -9,6 +9,7 @@ struct VideoManagementSheet: View {
     @State private var videoEntries: [VideoEntry] = []
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var isImporting = false
+    @State private var importFraction: Double?
     @State private var errorMessage: String?
     @State private var showFileImporter = false
     @State private var didLoad = false
@@ -97,12 +98,7 @@ struct VideoManagementSheet: View {
                     .disabled(isImporting)
 
                     if isImporting {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("動画を読み込み中...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        VideoImportProgressView(fraction: importFraction)
                     }
                 }
 
@@ -213,7 +209,11 @@ struct VideoManagementSheet: View {
 
         for item in items {
             do {
-                guard let movie = try await VideoTransferable.load(from: item) else { continue }
+                importFraction = nil
+                guard let movie = try await VideoTransferable.load(
+                    from: item,
+                    onProgress: { importFraction = $0 }
+                ) else { continue }
                 // VideoTransferable が Documents/Videos/ へ直接取り込み済み
                 let originalName = movie.originalFileName
                 let sandboxURL = movie.url
