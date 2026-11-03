@@ -103,11 +103,7 @@ struct ScoreControlsView: View {
 
     /// ゴールボタンの色。チームカラー（セクション別設定を含む）があればそれを使い、未設定なら従来色。
     private func goalButtonColor(for team: Team) -> Color {
-        if let hex = match.effectiveTeamColorHex(at: currentTime, for: team),
-           let color = Color(hex: hex) {
-            return color
-        }
-        return team == .home ? .blue : .red
+        match.editorTeamColor(at: currentTime, for: team)
     }
 
     private var isPKMode: Bool {

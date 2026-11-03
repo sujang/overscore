@@ -183,8 +183,15 @@ struct ScoreEditorView: View {
 
                         ForEach(goals, id: \.id) { goal in
                             let ratio = min(max(goal.timestamp / duration, 0), 1)
+                            let color = match.editorTeamColor(at: goal.timestamp, for: goal.team)
                             Circle()
-                                .fill(goal.team == .home ? Color.blue : Color.red)
+                                .fill(color)
+                                .overlay {
+                                    // 白など明るいチームカラーでもトラック上で見えるよう縁取り
+                                    if color.prefersDarkForeground {
+                                        Circle().strokeBorder(.secondary, lineWidth: 1)
+                                    }
+                                }
                                 .frame(width: 12, height: 12)
                                 .frame(width: 28, height: 28)
                                 .contentShape(Circle())

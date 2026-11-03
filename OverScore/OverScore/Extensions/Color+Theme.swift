@@ -86,3 +86,14 @@ extension Color {
         }
     }
 }
+
+extension Match {
+    /// 編集UI（ゴールボタン・記録位置など）で使うチーム色。チームカラー未設定なら従来の青/赤。
+    func editorTeamColor(at videoTime: TimeInterval, for team: Team) -> Color {
+        if let hex = effectiveTeamColorHex(at: videoTime, for: team),
+           let color = Color(hex: hex) {
+            return color
+        }
+        return team == .home ? .blue : .red
+    }
+}
