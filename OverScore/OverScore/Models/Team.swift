@@ -104,3 +104,10 @@ struct PKKick: Codable, Identifiable, Equatable {
     var isGoal: Bool
     var timestamp: TimeInterval
 }
+
+extension Array where Element == PKKick {
+    /// PK戦の先攻チーム（動画内で最も早く蹴ったチーム）。キックが無い場合はホーム。
+    var firstKickingTeam: Team {
+        self.min { ($0.timestamp, $0.order) < ($1.timestamp, $1.order) }?.team ?? .home
+    }
+}

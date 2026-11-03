@@ -1452,10 +1452,15 @@ struct ScoreboardLayerBuilder {
         container.frame = CGRect(x: containerX, y: containerY, width: containerWidth, height: containerHeight)
         applyThemeBackground(to: container, theme: config.style.theme, cornerRadius: cornerRadius)
 
+        // 先攻チームを上段に配置
+        let homeFirst = config.pkKicks.firstKickingTeam == .home
+        let topRowY = paddingV
+        let bottomRowY = paddingV + rowHeight + rowSpacing
+
         // Home row
         buildPKRow(
             in: container, teamName: config.homeTeamName, kicks: homePK,
-            y: paddingV, teamFontSize: teamFontSize, markSize: markSize,
+            y: homeFirst ? topRowY : bottomRowY, teamFontSize: teamFontSize, markSize: markSize,
             markWidth: markWidth, markSpacing: markSpacing, paddingH: paddingH,
             teamNameWidth: teamNameWidth, theme: config.style.theme,
             videoDuration: config.videoDuration
@@ -1464,7 +1469,7 @@ struct ScoreboardLayerBuilder {
         // Away row
         buildPKRow(
             in: container, teamName: config.awayTeamName, kicks: awayPK,
-            y: paddingV + rowHeight + rowSpacing, teamFontSize: teamFontSize,
+            y: homeFirst ? bottomRowY : topRowY, teamFontSize: teamFontSize,
             markSize: markSize, markWidth: markWidth, markSpacing: markSpacing,
             paddingH: paddingH, teamNameWidth: teamNameWidth,
             theme: config.style.theme, videoDuration: config.videoDuration

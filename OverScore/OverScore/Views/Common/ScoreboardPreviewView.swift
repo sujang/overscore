@@ -447,9 +447,16 @@ struct ScoreboardPreviewView: View {
         let homePK = pkKicks.filter { $0.team == .home }.sorted { $0.order < $1.order }
         let awayPK = pkKicks.filter { $0.team == .away }.sorted { $0.order < $1.order }
 
+        let homeFirst = pkKicks.firstKickingTeam == .home
+
         return VStack(alignment: .leading, spacing: base * 0.2) {
-            pkRow(teamName: homeTeamName, kicks: homePK, base: base)
-            pkRow(teamName: awayTeamName, kicks: awayPK, base: base)
+            if homeFirst {
+                pkRow(teamName: homeTeamName, kicks: homePK, base: base)
+                pkRow(teamName: awayTeamName, kicks: awayPK, base: base)
+            } else {
+                pkRow(teamName: awayTeamName, kicks: awayPK, base: base)
+                pkRow(teamName: homeTeamName, kicks: homePK, base: base)
+            }
         }
         .padding(.horizontal, base * 0.4)
         .padding(.vertical, base * 0.25)

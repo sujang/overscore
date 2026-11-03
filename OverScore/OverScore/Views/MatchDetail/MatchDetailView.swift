@@ -156,8 +156,13 @@ struct MatchDetailView: View {
             if !match.pkKicks.isEmpty {
                 Section("PK戦 (\(match.homePKScore) - \(match.awayPKScore))") {
                     VStack(alignment: .leading, spacing: 4) {
-                        pkResultRow(teamName: match.homeTeamName, kicks: match.homePKKicks)
-                        pkResultRow(teamName: match.awayTeamName, kicks: match.awayPKKicks)
+                        if match.pkKicks.firstKickingTeam == .home {
+                            pkResultRow(teamName: match.homeTeamName, kicks: match.homePKKicks)
+                            pkResultRow(teamName: match.awayTeamName, kicks: match.awayPKKicks)
+                        } else {
+                            pkResultRow(teamName: match.awayTeamName, kicks: match.awayPKKicks)
+                            pkResultRow(teamName: match.homeTeamName, kicks: match.homePKKicks)
+                        }
                     }
                 }
             }
