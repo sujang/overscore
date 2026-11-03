@@ -35,6 +35,14 @@ extension Color {
                        Int(round(b * 255)))
     }
 
+    /// 背景色として使ったとき、黒文字の方が読みやすいか（白・黄色などの明るい色）
+    var prefersDarkForeground: Bool {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a) else { return false }
+        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        return luminance > 0.7
+    }
+
     static func scoreboardBackground(for theme: ScoreboardStyle.Theme) -> Color {
         switch theme {
         case .dark:

@@ -101,6 +101,15 @@ struct ScoreControlsView: View {
         match.sportType.periodPresets
     }
 
+    /// ゴールボタンの色。チームカラー（セクション別設定を含む）があればそれを使い、未設定なら従来色。
+    private func goalButtonColor(for team: Team) -> Color {
+        if let hex = match.effectiveTeamColorHex(at: currentTime, for: team),
+           let color = Color(hex: hex) {
+            return color
+        }
+        return team == .home ? .blue : .red
+    }
+
     private var isPKMode: Bool {
         match.currentPeriodLabel(at: currentTime)?.lowercased() == "pk"
     }
@@ -173,7 +182,7 @@ struct ScoreControlsView: View {
                 .padding(.horizontal)
             } else {
                 HStack(spacing: 12) {
-                    GoalButton(teamName: match.homeTeamName, color: .blue, sportType: match.sportType) {
+                    GoalButton(teamName: match.homeTeamName, color: goalButtonColor(for: .home), sportType: match.sportType) {
                         onGoal(.home)
                     }
 
@@ -186,7 +195,7 @@ struct ScoreControlsView: View {
                     .buttonStyle(.bordered)
                     .disabled(!match.scoreEvents.contains { $0.kind == .point })
 
-                    GoalButton(teamName: match.awayTeamName, color: .red, sportType: match.sportType) {
+                    GoalButton(teamName: match.awayTeamName, color: goalButtonColor(for: .away), sportType: match.sportType) {
                         onGoal(.away)
                     }
                 }
@@ -821,6 +830,7 @@ private struct GoalButton: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(color)
+        .foregroundStyle(color.prefersDarkForeground ? Color.black : Color.white)
         .sensoryFeedback(.impact(weight: .heavy), trigger: tapCount)
     }
 }
