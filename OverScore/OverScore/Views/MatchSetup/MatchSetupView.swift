@@ -115,6 +115,16 @@ struct MatchSetupView: View {
     @State private var thumbnail: UIImage?
     @State private var setupVideoAspectRatio: CGFloat = 16.0 / 9.0
     @State private var videoOnlyMerge = false
+    @State private var teamPresets = TeamPresetStore.load()
+    @State private var selectedPreset: TeamPreset?
+    @State private var showPresetPicker = false
+
+    /// 選択したプリセットのチームカラー。選択後にチーム名を書き換えた場合は適用しない
+    private var presetColorHex: String? {
+        guard let selectedPreset,
+              selectedPreset.name == homeTeamName.trimmingCharacters(in: .whitespaces) else { return nil }
+        return selectedPreset.colorHex
+    }
 
     private var canProceed: Bool {
         !homeTeamName.trimmingCharacters(in: .whitespaces).isEmpty
@@ -136,8 +146,20 @@ struct MatchSetupView: View {
             }
 
             Section("チーム名") {
-                TextField("ホームチーム", text: $homeTeamName)
-                    .textInputAutocapitalization(.words)
+                HStack {
+                    TextField("ホームチーム", text: $homeTeamName)
+                        .textInputAutocapitalization(.words)
+                    if let presetColorHex {
+                        TeamPresetColorDot(colorHex: presetColorHex)
+                    }
+                }
+                if !teamPresets.isEmpty {
+                    Button {
+                        showPresetPicker = true
+                    } label: {
+                        Label("ホームを過去のチームから選ぶ", systemImage: "clock.arrow.circlepath")
+                    }
+                }
                 TextField("アウェイチーム", text: $awayTeamName)
                     .textInputAutocapitalization(.words)
             }
@@ -289,6 +311,12 @@ struct MatchSetupView: View {
                 errorMessage = String(localized: "ファイルの読み込みに失敗: \(error.localizedDescription)")
             }
         }
+        .sheet(isPresented: $showPresetPicker) {
+            TeamPresetPickerSheet(presets: $teamPresets) { preset in
+                homeTeamName = preset.name
+                selectedPreset = preset
+            }
+        }
         .sheet(item: $createdMatch) { match in
             ScoreboardStyleSheet(
                 match: match,
@@ -390,8 +418,12 @@ struct MatchSetupView: View {
         match.sportType = sportType
         var style = match.scoreboardStyle
         sportType.applyPreset(to: &style)
+        if let presetColorHex {
+            style.homeTeamColorHex = presetColorHex
+        }
         match.scoreboardStyle = style
         modelContext.insert(match)
+        TeamPresetStore.record(name: match.homeTeamName, colorHex: style.homeTeamColorHex)
 
         if videoOnlyMerge {
             match.skipOverlay = true
