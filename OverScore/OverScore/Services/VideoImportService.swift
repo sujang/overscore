@@ -126,11 +126,20 @@ struct VideoImportService {
             includingPropertiesForKeys: nil
         ) else { return }
 
+        // 端末では /var が /private/var へのシンボリックリンクで、contentsOfDirectory や
+        // ブックマークの解決は /private/var 側、自前で組み立てた URL は /var 側になる。
+        // URL のまま比較すると同じファイルを別物と判定して消してしまうため、実パスで比較する。
+        let referencedPaths = Set(referencedURLs.map(canonicalPath))
         for file in files {
-            if !referencedURLs.contains(file) {
+            if !referencedPaths.contains(canonicalPath(file)) {
                 try? fileManager.removeItem(at: file)
             }
         }
+    }
+
+    /// シンボリックリンクを解決した比較用のパス
+    static func canonicalPath(_ url: URL) -> String {
+        url.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
     /// /tmp/ 内の OverScore が作った一時ファイルを削除する。
