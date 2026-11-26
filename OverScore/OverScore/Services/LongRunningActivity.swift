@@ -101,15 +101,14 @@ final class LongRunningActivity {
         let identifier = "\(bundleID).import.\(UUID().uuidString)"
 
         // 継続処理タスクは起動完了後の登録が許されている。ID は毎回一意なので重複登録にならない。
-        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { [weak self] task in
-            guard let task = task as? BGContinuedProcessingTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            Task { @MainActor in
-                self?.attach(task)
-            }
-        }
+        // 起動ハンドラは BGTaskScheduler のキュー（メインスレッド以外）で呼ばれる。
+        // MainActor 上で作ったクロージャは MainActor 隔離と推論され、実行時チェックでクラッシュするため、
+        // nonisolated な関数で作る。
+        let registered = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: identifier,
+            using: nil,
+            launchHandler: Self.makeLaunchHandler(for: WeakActivity(self))
+        )
         guard registered else {
             Self.logger.error("failed to register continued processing task")
             return
@@ -139,15 +138,70 @@ final class LongRunningActivity {
         }
         continuedTask = task
         Self.apply(latestFraction, to: task.progress)
-        task.expirationHandler = { [weak self] in
-            // ユーザーがシステムUIから停止した、または進捗が止まったと判断された。
-            // 以降は beginBackgroundTask の猶予だけで続ける。
-            Task { @MainActor in
-                guard let self, let current = self.continuedTask as? BGContinuedProcessingTask,
-                      current === task else { return }
-                self.continuedTask = nil
+        task.expirationHandler = Self.makeExpirationHandler(
+            for: WeakActivity(self),
+            task: ContinuedTaskBox(task)
+        )
+    }
+
+    /// ユーザーがシステムUIから停止した、または進捗が止まったと判断されたときの処理。
+    /// 以降は beginBackgroundTask の猶予だけで続ける。
+    @available(iOS 26.0, *)
+    private func expire(_ task: BGContinuedProcessingTask) {
+        guard let current = continuedTask as? BGContinuedProcessingTask, current === task else { return }
+        continuedTask = nil
+        task.setTaskCompleted(success: false)
+    }
+
+    // MARK: - BGTaskScheduler から呼ばれるクロージャ
+    // どちらもメインスレッド以外で呼ばれるため、MainActor に隔離されない nonisolated 関数で作り、
+    // 本体の処理は MainActor へ移してから行う。
+
+    @available(iOS 26.0, *)
+    private nonisolated static func makeLaunchHandler(
+        for activity: WeakActivity
+    ) -> @Sendable (BGTask) -> Void {
+        return { task in
+            guard let continued = task as? BGContinuedProcessingTask else {
                 task.setTaskCompleted(success: false)
+                return
+            }
+            let box = ContinuedTaskBox(continued)
+            Task { @MainActor in
+                if let activity = activity.value {
+                    activity.attach(box.task)
+                } else {
+                    // 処理側がすでに破棄されている
+                    box.task.setTaskCompleted(success: true)
+                }
             }
         }
     }
+
+    @available(iOS 26.0, *)
+    private nonisolated static func makeExpirationHandler(
+        for activity: WeakActivity,
+        task box: ContinuedTaskBox
+    ) -> @Sendable () -> Void {
+        return {
+            Task { @MainActor in
+                activity.value?.expire(box.task)
+            }
+        }
+    }
+}
+
+/// スレッドをまたいで LongRunningActivity を弱参照で渡すための入れ物。
+/// value へは MainActor 上でのみアクセスする。
+private final class WeakActivity: @unchecked Sendable {
+    weak var value: LongRunningActivity?
+    init(_ value: LongRunningActivity) { self.value = value }
+}
+
+/// BGContinuedProcessingTask を MainActor へ渡すための入れ物。
+/// BGTask はスレッドセーフだが Sendable として宣言されていないため包む。
+@available(iOS 26.0, *)
+private final class ContinuedTaskBox: @unchecked Sendable {
+    let task: BGContinuedProcessingTask
+    init(_ task: BGContinuedProcessingTask) { self.task = task }
 }
