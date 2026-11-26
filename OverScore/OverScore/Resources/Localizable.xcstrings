@@ -3695,6 +3695,28 @@
         }
       }
     },
+    "画面がロックされたため、動画の読み込みを中断しました。もう一度追加してください": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video import was interrupted because the screen was locked. Please add the video again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면이 잠겨 동영상 불러오기를 중단했습니다. 다시 추가해 주세요"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由于屏幕已锁定，视频导入已中断。请重新添加"
+          }
+        }
+      }
+    },
     "完了するまでロックしても続行します": {
       "localizations": {
         "en": {

@@ -203,11 +203,18 @@ struct VideoManagementSheet: View {
         errorMessage = nil
 
         for (index, item) in items.enumerated() {
-            defer { activity.updateProgress(Double(index + 1) / Double(items.count)) }
+            // 実行猶予がなくなり中断した後は、残りの動画の転送を始めない
+            if activity.wasInterrupted { break }
+            activity.beginStage(upTo: Double(index + 1) / Double(items.count))
+            defer {
+                activity.setCancellable(nil)
+                activity.updateProgress(Double(index + 1) / Double(items.count))
+            }
             do {
                 importFraction = nil
                 guard let movie = try await VideoTransferable.load(
                     from: item,
+                    onStart: { activity.setCancellable($0) },
                     onProgress: { fraction in
                         importFraction = fraction
                         activity.updateProgress((Double(index) + fraction) / Double(items.count))
@@ -232,7 +239,9 @@ struct VideoManagementSheet: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = String(localized: "動画のインポートに失敗: \(error.localizedDescription)")
+                    errorMessage = activity.wasInterrupted
+                        ? String(localized: "画面がロックされたため、動画の読み込みを中断しました。もう一度追加してください")
+                        : String(localized: "動画のインポートに失敗: \(error.localizedDescription)")
                 }
             }
         }
@@ -253,6 +262,7 @@ struct VideoManagementSheet: View {
         errorMessage = nil
 
         for (index, url) in urls.enumerated() {
+            activity.beginStage(upTo: Double(index + 1) / Double(urls.count))
             defer { activity.updateProgress(Double(index + 1) / Double(urls.count)) }
             do {
                 let originalName = url.lastPathComponent
