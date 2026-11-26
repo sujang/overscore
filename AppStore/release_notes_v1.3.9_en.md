@@ -3,5 +3,5 @@
 ```
 • Fixed an issue where the app could close when the screen locked during a long video import. The screen no longer auto-locks while videos are being imported
 
-• On iOS 26 or later, video imports now continue to completion even if you lock your device or switch to another app. Progress is shown on the Lock Screen and elsewhere in the system
+• The app no longer closes if you manually lock your device or switch to another app during an import. The import is interrupted, but everything you've entered is kept, so you can simply add the video again
 ```

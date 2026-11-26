@@ -329,32 +329,22 @@ struct MatchSetupView: View {
     }
 
     private func importVideos(from items: [PhotosPickerItem]) async {
-        // 取り込み中にロックされると処理が中断・アプリが終了されるため、完了まで実行を継続させる
-        let activity = LongRunningActivity.begin(
-            name: "OverScoreImportPhotos",
-            title: String(localized: "動画を読み込み中...")
-        )
+        // 取り込み中に自動ロックされないようにし、手動ロック時は一時停止前に転送を中断して強制終了を防ぐ
+        let activity = LongRunningActivity.begin(name: "OverScoreImportPhotos")
         defer { activity.end() }
         isImporting = true
         errorMessage = nil
 
-        for (index, item) in items.enumerated() {
+        for item in items {
             // 実行猶予がなくなり中断した後は、残りの動画の転送を始めない
             if activity.wasInterrupted { break }
-            activity.beginStage(upTo: Double(index + 1) / Double(items.count))
-            defer {
-                activity.setCancellable(nil)
-                activity.updateProgress(Double(index + 1) / Double(items.count))
-            }
+            defer { activity.setCancellable(nil) }
             do {
                 importFraction = nil
                 guard let movie = try await VideoTransferable.load(
                     from: item,
                     onStart: { activity.setCancellable($0) },
-                    onProgress: { fraction in
-                        importFraction = fraction
-                        activity.updateProgress((Double(index) + fraction) / Double(items.count))
-                    }
+                    onProgress: { importFraction = $0 }
                 ) else {
                     continue
                 }
@@ -391,18 +381,13 @@ struct MatchSetupView: View {
     }
 
     private func importVideosFromFiles(urls: [URL]) async {
-        // 取り込み中にロックされると処理が中断・アプリが終了されるため、完了まで実行を継続させる
-        let activity = LongRunningActivity.begin(
-            name: "OverScoreImportFiles",
-            title: String(localized: "動画を読み込み中...")
-        )
+        // 取り込み中に自動ロックされないようにし、手動ロック時は一時停止前に転送を中断して強制終了を防ぐ
+        let activity = LongRunningActivity.begin(name: "OverScoreImportFiles")
         defer { activity.end() }
         isImporting = true
         errorMessage = nil
 
-        for (index, url) in urls.enumerated() {
-            activity.beginStage(upTo: Double(index + 1) / Double(urls.count))
-            defer { activity.updateProgress(Double(index + 1) / Double(urls.count)) }
+        for url in urls {
             do {
                 let originalName = url.lastPathComponent
                 let creationDate = await VideoImportService.creationDate(for: url)
