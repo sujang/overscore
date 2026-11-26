@@ -329,21 +329,17 @@ struct MatchSetupView: View {
     }
 
     private func importVideos(from items: [PhotosPickerItem]) async {
-        // 取り込み中に自動ロックされないようにし、手動ロック時は一時停止前に転送を中断して強制終了を防ぐ
+        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
         let activity = LongRunningActivity.begin(name: "OverScoreImportPhotos")
         defer { activity.end() }
         isImporting = true
         errorMessage = nil
 
         for item in items {
-            // 実行猶予がなくなり中断した後は、残りの動画の転送を始めない
-            if activity.wasInterrupted { break }
-            defer { activity.setCancellable(nil) }
             do {
                 importFraction = nil
                 guard let movie = try await VideoTransferable.load(
                     from: item,
-                    onStart: { activity.setCancellable($0) },
                     onProgress: { importFraction = $0 }
                 ) else {
                     continue
@@ -368,9 +364,7 @@ struct MatchSetupView: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = activity.wasInterrupted
-                        ? String(localized: "画面がロックされたため、動画の読み込みを中断しました。もう一度追加してください")
-                        : String(localized: "動画のインポートに失敗: \(error.localizedDescription)")
+                    errorMessage = String(localized: "動画のインポートに失敗: \(error.localizedDescription)")
                 }
             }
         }
@@ -381,7 +375,7 @@ struct MatchSetupView: View {
     }
 
     private func importVideosFromFiles(urls: [URL]) async {
-        // 取り込み中に自動ロックされないようにし、手動ロック時は一時停止前に転送を中断して強制終了を防ぐ
+        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
         let activity = LongRunningActivity.begin(name: "OverScoreImportFiles")
         defer { activity.end() }
         isImporting = true
@@ -468,13 +462,10 @@ struct VideoTransferable {
     /// 書き出し直されることがあり、数GBの動画で取り込みが極端に遅くなる。
     /// そのためアイテムが最初に挙げる形式（元の形式）を明示して受け取る。
     ///
-    /// - Parameters:
-    ///   - onStart: 転送の開始時に、中断用の Progress を渡す。`cancel()` すると転送を中断して失敗を返す。
-    ///   - onProgress: 写真ライブラリ側の書き出し進捗（0〜1）。
-    ///     写真アプリで編集済みの動画などは受け取り前に作り直されるため数分かかることがある。
+    /// - Parameter onProgress: 写真ライブラリ側の書き出し進捗（0〜1）。
+    ///   写真アプリで編集済みの動画などは受け取り前に作り直されるため数分かかることがある。
     static func load(
         from item: PhotosPickerItem,
-        onStart: @escaping @MainActor (Progress) -> Void = { _ in },
         onProgress: @escaping @MainActor (Double) -> Void = { _ in }
     ) async throws -> VideoTransferable? {
         let supportedTypes = item.supportedContentTypes
@@ -488,11 +479,11 @@ struct VideoTransferable {
         let start = clock.now
         let video: VideoTransferable?
         if requestedType == .mpeg4Movie {
-            video = try await loadTransferable(ReceivedVideo<MPEG4Movie>.self, from: item, onStart: onStart, onProgress: onProgress)?.video
+            video = try await loadTransferable(ReceivedVideo<MPEG4Movie>.self, from: item, onProgress: onProgress)?.video
         } else if requestedType == .quickTimeMovie {
-            video = try await loadTransferable(ReceivedVideo<QuickTimeMovie>.self, from: item, onStart: onStart, onProgress: onProgress)?.video
+            video = try await loadTransferable(ReceivedVideo<QuickTimeMovie>.self, from: item, onProgress: onProgress)?.video
         } else {
-            video = try await loadTransferable(ReceivedVideo<AnyMovie>.self, from: item, onStart: onStart, onProgress: onProgress)?.video
+            video = try await loadTransferable(ReceivedVideo<AnyMovie>.self, from: item, onProgress: onProgress)?.video
         }
         logger.notice("loadTransferable elapsed=\(start.duration(to: clock.now).description, privacy: .public)")
 
@@ -507,7 +498,6 @@ struct VideoTransferable {
     private static func loadTransferable<T: Transferable>(
         _ type: T.Type,
         from item: PhotosPickerItem,
-        onStart: @escaping @MainActor (Progress) -> Void,
         onProgress: @escaping @MainActor (Double) -> Void
     ) async throws -> T? {
         let observationBox = ProgressObservationBox()
@@ -517,32 +507,15 @@ struct VideoTransferable {
             let progress = item.loadTransferable(type: type) { result in
                 continuation.resume(with: result)
             }
-            let progressBox = ProgressBox(progress)
-            Task { @MainActor in onStart(progressBox.progress) }
             observationBox.observation = progress.observe(\.fractionCompleted, options: [.initial, .new]) { progress, _ in
                 let fraction = progress.fractionCompleted
-                observationBox.logIfNeeded(fraction)
                 Task { @MainActor in onProgress(fraction) }
             }
         }
     }
 
-    private final class ProgressObservationBox: @unchecked Sendable {
+    private final class ProgressObservationBox {
         var observation: NSKeyValueObservation?
-        private var lastLogged: Double = -1
-
-        /// 写真ライブラリから途中の進捗が届いているかの調査用。10% ごとに記録する。
-        func logIfNeeded(_ fraction: Double) {
-            guard fraction - lastLogged >= 0.1 || (fraction >= 1 && lastLogged < 1) else { return }
-            lastLogged = fraction
-            VideoTransferable.logger.notice("transfer progress=\(fraction, privacy: .public)")
-        }
-    }
-
-    /// Progress を MainActor へ渡すための入れ物（Progress はスレッドセーフ）
-    private final class ProgressBox: @unchecked Sendable {
-        let progress: Progress
-        init(_ progress: Progress) { self.progress = progress }
     }
 
     /// 受け取ったファイルを Documents/Videos/ へ引き取る。

@@ -193,21 +193,17 @@ struct VideoManagementSheet: View {
     // MARK: - Import from Photos Library
 
     private func importVideos(from items: [PhotosPickerItem]) async {
-        // 取り込み中に自動ロックされないようにし、手動ロック時は一時停止前に転送を中断して強制終了を防ぐ
+        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
         let activity = LongRunningActivity.begin(name: "OverScoreImportPhotos")
         defer { activity.end() }
         isImporting = true
         errorMessage = nil
 
         for item in items {
-            // 実行猶予がなくなり中断した後は、残りの動画の転送を始めない
-            if activity.wasInterrupted { break }
-            defer { activity.setCancellable(nil) }
             do {
                 importFraction = nil
                 guard let movie = try await VideoTransferable.load(
                     from: item,
-                    onStart: { activity.setCancellable($0) },
                     onProgress: { importFraction = $0 }
                 ) else { continue }
                 // VideoTransferable が Documents/Videos/ へ直接取り込み済み
@@ -229,9 +225,7 @@ struct VideoManagementSheet: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = activity.wasInterrupted
-                        ? String(localized: "画面がロックされたため、動画の読み込みを中断しました。もう一度追加してください")
-                        : String(localized: "動画のインポートに失敗: \(error.localizedDescription)")
+                    errorMessage = String(localized: "動画のインポートに失敗: \(error.localizedDescription)")
                 }
             }
         }
@@ -242,7 +236,7 @@ struct VideoManagementSheet: View {
     // MARK: - Import from Files
 
     private func importVideosFromFiles(urls: [URL]) async {
-        // 取り込み中に自動ロックされないようにし、手動ロック時は一時停止前に転送を中断して強制終了を防ぐ
+        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
         let activity = LongRunningActivity.begin(name: "OverScoreImportFiles")
         defer { activity.end() }
         isImporting = true

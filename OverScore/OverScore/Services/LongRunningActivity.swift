@@ -1,38 +1,31 @@
 import UIKit
-import os
 
-/// 動画の取り込みなど、時間のかかる処理を端末のロックやアプリ切り替えから守る。
+/// 動画の取り込みなど、時間のかかる処理の間だけ端末の自動ロックを止め、
+/// バックグラウンドへ移ったときの実行猶予を確保する。
 ///
-/// 1. 自動ロックを止める（画面を点けたままにする）
-/// 2. 手動でロックしたり他のアプリへ切り替えたりしたときは、`beginBackgroundTask` で数十秒の猶予を得る
-/// 3. 猶予が切れたら、`setCancellable` で登録した転送をアプリが一時停止される前に中断する
+/// 自動ロックが掛かるとアプリはバックグラウンドへ移り、数秒で一時停止される。
+/// 写真ライブラリからの数GBの取り込みがその途中で止まると、復帰後に失敗したり
+/// システムに終了させられたりするため、取り込み中は自動ロックそのものを防ぐ。
 ///
-/// 3 が必要な理由: 写真ライブラリからの受け取り中はファイルコーディネーションのクレームを保持している。
-/// クレームを保持したまま一時停止されると、システムが解放を待ちきれずにアプリを強制終了する
-/// （RunningBoard 0x2182BAAD）。先に転送を中断すれば、強制終了ではなく通常の一時停止になり、
-/// 入力中の画面も残る。
+/// 手動でロック・アプリ切り替えされた場合はバックグラウンドタスクで猶予を得る。
+/// 猶予切れ時は必ず endBackgroundTask する（終了しないとシステムに強制終了される）。
 ///
-/// iOS 26 の BGContinuedProcessingTask も試したが、実機（iOS 27.2）ではタスクが動作中でも
-/// 猶予切れでアプリが一時停止され、強制終了を防げなかったため使っていない。
+/// 既知の制約（v1.3.9 時点、iOS 27.2 実機で確認）:
+/// 写真ピッカーからの受け取り中に手動ロックなどで猶予（約30秒）が切れると、アプリは強制終了される
+/// （RunningBoard 0x2182BAAD）。PhotosPicker が内部で PhotosFileProvider のファイルコーディネーション
+/// クレームを保持しており、一時停止時にその解放待ちがタイムアウトするため。
+/// 次の対策はいずれも効果がなかった:
+/// - loadTransferable が返す Progress の cancel()（クレームは解放されない）
+/// - iOS 26 の BGContinuedProcessingTask（タスク動作中でも猶予切れで一時停止される）
+/// 防ぐには PHAssetResourceManager で直接読み出すなど、受け取り方式の変更が必要。
 @MainActor
 final class LongRunningActivity {
-    private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "OverScore",
-        category: "LongRunningActivity"
-    )
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var isActive = false
 
     /// 同時に実行中の処理の数。最後の処理が終わったときだけ自動ロックを戻す。
     private static var activeCount = 0
 
-    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
-    private var isActive = false
-
-    /// 一時停止前に中断する転送
-    private var cancellable: Progress?
-    /// 実行猶予がなくなり、転送を中断したか
-    private(set) var wasInterrupted = false
-
-    /// - Parameter name: デバッグ用のタスク名
     static func begin(name: String) -> LongRunningActivity {
         let activity = LongRunningActivity()
         activity.start(name: name)
@@ -43,34 +36,13 @@ final class LongRunningActivity {
         isActive = true
         Self.activeCount += 1
         UIApplication.shared.isIdleTimerDisabled = true
-        // 期限切れハンドラはメインスレッドで呼ばれる
         backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
             MainActor.assumeIsolated {
-                self?.backgroundTaskDidExpire()
+                self?.endBackgroundTask()
             }
         }
     }
 
-    /// 実行猶予がなくなったときに中断する転送を登録する。nil で解除。
-    func setCancellable(_ progress: Progress?) {
-        // 開始通知は MainActor へ非同期に届くため、転送がすでに終わっていれば登録しない
-        if let progress, progress.isFinished || progress.isCancelled { return }
-        cancellable = progress
-        if wasInterrupted {
-            progress?.cancel()
-        }
-    }
-
-    /// 猶予切れの直後にアプリは一時停止される。その前に転送を中断してクレームを手放す。
-    private func backgroundTaskDidExpire() {
-        endBackgroundTask()
-        guard isActive else { return }
-        wasInterrupted = true
-        Self.logger.notice("background task expired; interrupting transfer (cancellable=\(self.cancellable != nil, privacy: .public))")
-        cancellable?.cancel()
-    }
-
-    /// 処理の終了を伝える。複数回呼んでも安全。
     func end() {
         guard isActive else { return }
         isActive = false
@@ -78,9 +50,7 @@ final class LongRunningActivity {
         if Self.activeCount == 0 {
             UIApplication.shared.isIdleTimerDisabled = false
         }
-        cancellable = nil
         endBackgroundTask()
-        Self.logger.notice("activity ended interrupted=\(self.wasInterrupted, privacy: .public)")
     }
 
     private func endBackgroundTask() {
