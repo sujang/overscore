@@ -329,6 +329,9 @@ struct MatchSetupView: View {
     }
 
     private func importVideos(from items: [PhotosPickerItem]) async {
+        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
+        let activity = LongRunningActivity.begin(name: "OverScoreImportPhotos")
+        defer { activity.end() }
         isImporting = true
         errorMessage = nil
 
@@ -372,6 +375,9 @@ struct MatchSetupView: View {
     }
 
     private func importVideosFromFiles(urls: [URL]) async {
+        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
+        let activity = LongRunningActivity.begin(name: "OverScoreImportFiles")
+        defer { activity.end() }
         isImporting = true
         errorMessage = nil
 

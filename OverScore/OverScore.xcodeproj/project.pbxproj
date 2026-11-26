@@ -29,6 +29,7 @@
 		7AA89F41718448BE24F5E84B /* VideoCompositionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25195CBD7A3D9040A5EC7EDE /* VideoCompositionBuilder.swift */; };
 		870B7D45B08B42AFD9903735 /* Match.swift in Sources */ = {isa = PBXBuildFile; fileRef = 850180EF3CBC5D438CCD2031 /* Match.swift */; };
 		93EEEC549130E101E4033D69 /* VideoImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CCE5B32E0D76B8CE765B0A1 /* VideoImportService.swift */; };
+		4C0A11E2B5D84F3A9E6C7D01 /* LongRunningActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0A11E2B5D84F3A9E6C7D02 /* LongRunningActivity.swift */; };
 		95857BF74F8A173D32F5C666 /* ScoreControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC8936A9E5D30377300A9EC /* ScoreControlsView.swift */; };
 		9C1F6694BF8E07EEF9F033AA /* EventListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3906BE0660E8B34B17035C16 /* EventListView.swift */; };
 		A4B2056C032867586EDD36A1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671933DB6B254866E6841B7 /* ContentView.swift */; };
@@ -68,6 +69,7 @@
 		62FF5D6F8590C73964E64C5F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		66E6B9C262D519DDE3CA0DC8 /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
 		6CCE5B32E0D76B8CE765B0A1 /* VideoImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoImportService.swift; sourceTree = "<group>"; };
+		4C0A11E2B5D84F3A9E6C7D02 /* LongRunningActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongRunningActivity.swift; sourceTree = "<group>"; };
 		73426A627AB4A148CC78ED98 /* Router.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Router.swift; sourceTree = "<group>"; };
 		777C04D83C2BF400FA16CDB1 /* CMTime+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMTime+Extensions.swift"; sourceTree = "<group>"; };
 		7D4DF23EEE889044BE0B4A37 /* MatchSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchSetupView.swift; sourceTree = "<group>"; };
@@ -138,6 +140,7 @@
 				25195CBD7A3D9040A5EC7EDE /* VideoCompositionBuilder.swift */,
 				C8CB0FF062AEEE73F1212C3F /* VideoExportService.swift */,
 				6CCE5B32E0D76B8CE765B0A1 /* VideoImportService.swift */,
+				4C0A11E2B5D84F3A9E6C7D02 /* LongRunningActivity.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -395,6 +398,7 @@
 				7AA89F41718448BE24F5E84B /* VideoCompositionBuilder.swift in Sources */,
 				D2EEF2340F92152168CD221F /* VideoExportService.swift in Sources */,
 				93EEEC549130E101E4033D69 /* VideoImportService.swift in Sources */,
+				4C0A11E2B5D84F3A9E6C7D01 /* LongRunningActivity.swift in Sources */,
 				0061EA760AE5A8CFD6CAA190 /* VideoManagementSheet.swift in Sources */,
 				AD5F403C7B41BD8049ED4B22 /* VideoPlayerView.swift in Sources */,
 				AD5F403C7B41BD8049ED4B23 /* ZoomableView.swift in Sources */,
@@ -411,7 +415,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 88;
+				CURRENT_PROJECT_VERSION = 89;
 				DEVELOPMENT_TEAM = 48745L927F;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -425,7 +429,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.8;
+				MARKETING_VERSION = 1.3.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sujang.ScoreFrame;
 				SDKROOT = iphoneos;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -498,7 +502,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 88;
+				CURRENT_PROJECT_VERSION = 89;
 				DEVELOPMENT_TEAM = 48745L927F;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -512,7 +516,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.8;
+				MARKETING_VERSION = 1.3.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sujang.ScoreFrame;
 				SDKROOT = iphoneos;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
