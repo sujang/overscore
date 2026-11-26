@@ -12,6 +12,12 @@ struct ContentView: View {
                         SportSelectView()
                     case .matchSetup(let sportType):
                         MatchSetupView(sportType: sportType)
+                    case .resumeMatchSetup:
+                        if let draft = MatchDraftStore.load() {
+                            MatchSetupView(sportType: draft.sportType, restoring: draft)
+                        } else {
+                            SportSelectView()
+                        }
                     case .scoreEditor(let match):
                         ScoreEditorView(match: match)
                     case .matchDetail(let match):

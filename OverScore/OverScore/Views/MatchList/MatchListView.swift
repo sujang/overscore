@@ -8,6 +8,9 @@ struct MatchListView: View {
     @State private var showDeleteConfirmation = false
     @State private var matchToDelete: Match?
     @State private var showSettings = false
+    /// 入力途中の新規試合（動画の取り込み中にアプリが終了した場合などに残る）
+    @State private var draft: MatchDraft?
+    @State private var showDiscardDraftConfirmation = false
 
     var body: some View {
         Group {
@@ -16,6 +19,14 @@ struct MatchListView: View {
             } else {
                 matchList
             }
+        }
+        .safeAreaInset(edge: .top) {
+            if let draft {
+                draftBanner(draft)
+            }
+        }
+        .onAppear {
+            draft = MatchDraftStore.load()
         }
         .navigationTitle("OverScore")
         .toolbar {
@@ -49,6 +60,60 @@ struct MatchListView: View {
         } message: {
             Text("この試合データを削除しますか？元に戻すことはできません。")
         }
+        .alert("入力途中の試合を破棄", isPresented: $showDiscardDraftConfirmation) {
+            Button("破棄", role: .destructive) {
+                MatchDraftStore.discard()
+                draft = nil
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("入力した内容と読み込み済みの動画を削除します。元に戻すことはできません。")
+        }
+    }
+
+    private func draftBanner(_ draft: MatchDraft) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("入力途中の試合があります", systemImage: "square.and.pencil")
+                .font(.subheadline.weight(.semibold))
+            Text(draftSummary(draft))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            HStack {
+                Button {
+                    router.navigate(to: .resumeMatchSetup)
+                } label: {
+                    Text("続きから")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button(role: .destructive) {
+                    showDiscardDraftConfirmation = true
+                } label: {
+                    Text("破棄")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .background(.bar)
+    }
+
+    /// 例: "⚽️ FC東京 vs FC大阪 · 動画 2本"
+    private func draftSummary(_ draft: MatchDraft) -> String {
+        let unnamed = String(localized: "未入力")
+        let home = draft.homeTeamName.trimmingCharacters(in: .whitespaces)
+        let away = draft.awayTeamName.trimmingCharacters(in: .whitespaces)
+        var parts = ["\(draft.sportType.emoji) \(home.isEmpty ? unnamed : home) vs \(away.isEmpty ? unnamed : away)"]
+        if !draft.videos.isEmpty {
+            parts.append(String(localized: "動画 \(draft.videos.count)本"))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var emptyStateView: some View {

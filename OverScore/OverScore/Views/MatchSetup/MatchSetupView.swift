@@ -101,6 +101,8 @@ struct MatchSetupView: View {
     @Environment(Router.self) private var router
 
     let sportType: SportType
+    /// 再開する下書き。nil なら新規入力
+    var restoring: MatchDraft? = nil
 
     @State private var homeTeamName = ""
     @State private var awayTeamName = ""
@@ -118,12 +120,32 @@ struct MatchSetupView: View {
     @State private var teamPresets = TeamPresetStore.load()
     @State private var selectedPreset: TeamPreset?
     @State private var showPresetPicker = false
+    /// restoring の内容を画面に反映し終えたか
+    @State private var didRestore = false
+    /// この画面が下書きを書き込んだ（または引き継いだ）か。画面を離れるときの破棄に使う
+    @State private var ownsDraft = false
 
     /// 選択したプリセットのチームカラー。選択後にチーム名を書き換えた場合は適用しない
     private var presetColorHex: String? {
         guard let selectedPreset,
               selectedPreset.name == homeTeamName.trimmingCharacters(in: .whitespaces) else { return nil }
         return selectedPreset.colorHex
+    }
+
+    /// 現在の入力内容。変更のたびに下書きとして保存する
+    private var currentDraft: MatchDraft {
+        MatchDraft(
+            sportType: sportType,
+            homeTeamName: homeTeamName,
+            awayTeamName: awayTeamName,
+            matchInfo: matchInfo,
+            presetName: presetColorHex != nil ? selectedPreset?.name : nil,
+            presetColorHex: presetColorHex,
+            videoOnlyMerge: videoOnlyMerge,
+            videos: videoEntries.map {
+                MatchDraft.Video(fileName: $0.url.lastPathComponent, originalFileName: $0.originalFileName)
+            }
+        )
     }
 
     private var canProceed: Bool {
@@ -290,6 +312,24 @@ struct MatchSetupView: View {
         .navigationTitle("新規試合")
         .navigationBarTitleDisplayMode(.inline)
         .environment(\.editMode, .constant(.active))
+        .task {
+            await restoreDraftIfNeeded()
+        }
+        .onChange(of: currentDraft) { _, draft in
+            // 下書きの反映中は、反映途中の内容で上書きしない
+            guard restoring == nil || didRestore else { return }
+            // 動画の取り込み中に強制終了されても入力内容と取り込み済みの動画が残るよう、変更のたびに保存する
+            ownsDraft = true
+            MatchDraftStore.save(draft)
+        }
+        .onDisappear {
+            // 戻るなど通常の操作で画面を離れたときは下書きを残さない
+            // （強制終了時は呼ばれないため、下書きが残って次回起動時に再開できる）
+            if ownsDraft {
+                MatchDraftStore.clear()
+                ownsDraft = false
+            }
+        }
         .onChange(of: selectedItems) { _, newItems in
             guard !newItems.isEmpty else { return }
             Task {
@@ -424,7 +464,44 @@ struct MatchSetupView: View {
         }
     }
 
+    /// 保存済みの下書きを画面に反映する。動画は残っているものだけ復元する。
+    private func restoreDraftIfNeeded() async {
+        guard let draft = restoring, !didRestore else { return }
+        isImporting = true
+        var entries: [VideoEntry] = []
+        for (video, url) in zip(draft.videos, draft.videoURLs)
+        where FileManager.default.fileExists(atPath: url.path) {
+            let thumb = await ThumbnailGenerator.generate(for: url)
+            let info = await VideoImportService.videoInfo(for: url)
+            let creationDate = await VideoImportService.creationDate(for: url)
+            entries.append(VideoEntry(
+                url: url,
+                originalFileName: video.originalFileName,
+                thumbnail: thumb,
+                creationDate: creationDate,
+                dimensions: info?.dimensions,
+                frameRate: info?.frameRate,
+                fileSize: info?.fileSize
+            ))
+        }
+        // 反映途中の内容で下書きを上書きしないよう、まとめて反映する
+        homeTeamName = draft.homeTeamName
+        awayTeamName = draft.awayTeamName
+        matchInfo = draft.matchInfo
+        if let presetName = draft.presetName {
+            selectedPreset = TeamPreset(name: presetName, colorHex: draft.presetColorHex, lastUsedAt: Date())
+        }
+        videoOnlyMerge = draft.videoOnlyMerge
+        videoEntries = entries
+        isImporting = false
+        didRestore = true
+        ownsDraft = true
+    }
+
     private func createMatch() {
+        // 試合として保存するので下書きは不要
+        MatchDraftStore.clear()
+        ownsDraft = false
         let match = Match(
             homeTeamName: homeTeamName.trimmingCharacters(in: .whitespaces),
             awayTeamName: awayTeamName.trimmingCharacters(in: .whitespaces)

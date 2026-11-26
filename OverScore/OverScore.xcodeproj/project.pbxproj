@@ -37,6 +37,7 @@
 		AD5F403C7B41BD8049ED4B23 /* ZoomableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49DF3CBF5A7E44A565E769A /* ZoomableView.swift */; };
 		AF715706A86A5D6622527AC3 /* TimeoutEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 986ED4F76219BC8FAF496C51 /* TimeoutEvent.swift */; };
 		7A1C0E5D2F3B4A6C8D9E0F12 /* TeamPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0E5D2F3B4A6C8D9E0F11 /* TeamPreset.swift */; };
+		5D7E2A11C3B94F0E8A6D1B21 /* MatchDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7E2A11C3B94F0E8A6D1B22 /* MatchDraft.swift */; };
 		C51E9378D51EE69B8A110B02 /* ScoreboardPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB139CF4C616D5C84468CDE /* ScoreboardPreviewView.swift */; };
 		CBFE546A1F902BE14FA70AF7 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84E8ACF3D408DB569611372 /* PlayerViewModel.swift */; };
 		D0BCA4AEE2F73C13B0EC480B /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E6B9C262D519DDE3CA0DC8 /* Color+Theme.swift */; };
@@ -83,6 +84,7 @@
 		7A1C0E5D2F3B4A6C8D9E0F13 /* TeamPresetPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamPresetPickerSheet.swift; sourceTree = "<group>"; };
 		986ED4F76219BC8FAF496C51 /* TimeoutEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeoutEvent.swift; sourceTree = "<group>"; };
 		7A1C0E5D2F3B4A6C8D9E0F11 /* TeamPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamPreset.swift; sourceTree = "<group>"; };
+		5D7E2A11C3B94F0E8A6D1B22 /* MatchDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchDraft.swift; sourceTree = "<group>"; };
 		9B4AB9F7833A481550F24A68 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		A10AA62D21EB08A49A17F4CD /* OverScore.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OverScore.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB34B3867BED85E7D26714AF /* OverScoreApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverScoreApp.swift; sourceTree = "<group>"; };
@@ -177,6 +179,7 @@
 				50FA4609D59F1F66396A3884 /* Team.swift */,
 				986ED4F76219BC8FAF496C51 /* TimeoutEvent.swift */,
 				7A1C0E5D2F3B4A6C8D9E0F11 /* TeamPreset.swift */,
+				5D7E2A11C3B94F0E8A6D1B22 /* MatchDraft.swift */,
 				C8F4B35FE9E5DE185224800B /* TimerSegment.swift */,
 			);
 			path = Models;
@@ -394,6 +397,7 @@
 				6A2E5D26E81C6C147A62902F /* TimeFormatting.swift in Sources */,
 				AF715706A86A5D6622527AC3 /* TimeoutEvent.swift in Sources */,
 				7A1C0E5D2F3B4A6C8D9E0F12 /* TeamPreset.swift in Sources */,
+				5D7E2A11C3B94F0E8A6D1B21 /* MatchDraft.swift in Sources */,
 				0E9132FB5EAD84F8560EC447 /* TimerSegment.swift in Sources */,
 				7AA89F41718448BE24F5E84B /* VideoCompositionBuilder.swift in Sources */,
 				D2EEF2340F92152168CD221F /* VideoExportService.swift in Sources */,
