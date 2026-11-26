@@ -193,18 +193,25 @@ struct VideoManagementSheet: View {
     // MARK: - Import from Photos Library
 
     private func importVideos(from items: [PhotosPickerItem]) async {
-        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
-        let activity = LongRunningActivity.begin(name: "OverScoreImportPhotos")
+        // 取り込み中にロックされると処理が中断・アプリが終了されるため、完了まで実行を継続させる
+        let activity = LongRunningActivity.begin(
+            name: "OverScoreImportPhotos",
+            title: String(localized: "動画を読み込み中...")
+        )
         defer { activity.end() }
         isImporting = true
         errorMessage = nil
 
-        for item in items {
+        for (index, item) in items.enumerated() {
+            defer { activity.updateProgress(Double(index + 1) / Double(items.count)) }
             do {
                 importFraction = nil
                 guard let movie = try await VideoTransferable.load(
                     from: item,
-                    onProgress: { importFraction = $0 }
+                    onProgress: { fraction in
+                        importFraction = fraction
+                        activity.updateProgress((Double(index) + fraction) / Double(items.count))
+                    }
                 ) else { continue }
                 // VideoTransferable が Documents/Videos/ へ直接取り込み済み
                 let originalName = movie.originalFileName
@@ -236,13 +243,17 @@ struct VideoManagementSheet: View {
     // MARK: - Import from Files
 
     private func importVideosFromFiles(urls: [URL]) async {
-        // 取り込み中に自動ロックされると処理が中断・アプリが終了されるため、完了まで防ぐ
-        let activity = LongRunningActivity.begin(name: "OverScoreImportFiles")
+        // 取り込み中にロックされると処理が中断・アプリが終了されるため、完了まで実行を継続させる
+        let activity = LongRunningActivity.begin(
+            name: "OverScoreImportFiles",
+            title: String(localized: "動画を読み込み中...")
+        )
         defer { activity.end() }
         isImporting = true
         errorMessage = nil
 
-        for url in urls {
+        for (index, url) in urls.enumerated() {
+            defer { activity.updateProgress(Double(index + 1) / Double(urls.count)) }
             do {
                 let originalName = url.lastPathComponent
                 let creationDate = await VideoImportService.creationDate(for: url)

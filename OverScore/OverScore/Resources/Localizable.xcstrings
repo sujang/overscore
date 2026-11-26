@@ -3695,6 +3695,28 @@
         }
       }
     },
+    "完了するまでロックしても続行します": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continues even if you lock your device"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기를 잠가도 완료될 때까지 계속됩니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "锁定设备后也会继续，直到完成"
+          }
+        }
+      }
+    },
     "動画を読み込み中...": {
       "localizations": {
         "en": {
