@@ -418,6 +418,7 @@
 				CURRENT_PROJECT_VERSION = 94;
 				DEVELOPMENT_TEAM = 48745L927F;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OverScore/AppInfo.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "エクスポートした動画を写真に保存するためにアクセスが必要です";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "試合動画を選択するためにフォトライブラリへのアクセスが必要です";
@@ -505,6 +506,7 @@
 				CURRENT_PROJECT_VERSION = 94;
 				DEVELOPMENT_TEAM = 48745L927F;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OverScore/AppInfo.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "エクスポートした動画を写真に保存するためにアクセスが必要です";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "試合動画を選択するためにフォトライブラリへのアクセスが必要です";

@@ -3695,6 +3695,28 @@
         }
       }
     },
+    "写真ライブラリから取り込んでいます": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importing from your photo library"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 보관함에서 가져오는 중"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在从照片图库导入"
+          }
+        }
+      }
+    },
     "動画を読み込み中...": {
       "localizations": {
         "en": {
