@@ -26,6 +26,8 @@ struct ScoreboardStyleSheet: View {
     }
     @State private var editTarget: EditTarget = .scoreboard
     @State private var showDiscardConfirm = false
+    @State private var teamPresets = TeamPresetStore.load()
+    @State private var showPresetPicker = false
 
     // ジェスチャー用ベース値（スコアボード）
     @State private var baseScale: CGFloat = 1.0
@@ -124,6 +126,13 @@ struct ScoreboardStyleSheet: View {
                     TextField("ホームチーム名", text: $homeTeamNameEdit)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    if !teamPresets.isEmpty {
+                        Button {
+                            showPresetPicker = true
+                        } label: {
+                            Label("ホームを過去のチームから選ぶ", systemImage: "clock.arrow.circlepath")
+                        }
+                    }
                     TextField("アウェイチーム名", text: $awayTeamNameEdit)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -210,6 +219,7 @@ struct ScoreboardStyleSheet: View {
                         if !trimmedAway.isEmpty { match.awayTeamName = trimmedAway }
                         let trimmedInfo = matchInfoEdit.trimmingCharacters(in: .whitespacesAndNewlines)
                         match.matchInfo = trimmedInfo.isEmpty ? nil : trimmedInfo
+                        TeamPresetStore.record(name: match.homeTeamName, colorHex: style.homeTeamColorHex)
                         dismiss()
                         onSave?()
                     }
@@ -217,6 +227,14 @@ struct ScoreboardStyleSheet: View {
             }
         }
         .interactiveDismissDisabled(hasUnsavedChanges)
+        .sheet(isPresented: $showPresetPicker) {
+            TeamPresetPickerSheet(presets: $teamPresets) { preset in
+                homeTeamNameEdit = preset.name
+                if let hex = preset.colorHex {
+                    style.homeTeamColorHex = hex
+                }
+            }
+        }
         .confirmationDialog(
             "変更を破棄しますか？",
             isPresented: $showDiscardConfirm,

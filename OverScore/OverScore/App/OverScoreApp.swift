@@ -30,6 +30,9 @@ struct OverScoreApp: App {
         let context = ModelContext(container)
         let referencedURLs = collectReferencedVideoURLs(context: context)
         VideoImportService.cleanupOrphanedVideos(referencedURLs: referencedURLs)
+
+        // 既存の試合からチームプリセットを作成（初回のみ）
+        TeamPresetStore.backfillIfNeeded(from: (try? context.fetch(FetchDescriptor<Match>())) ?? [])
     }
 
     private func collectReferencedVideoURLs(context: ModelContext) -> Set<URL> {
@@ -43,6 +46,10 @@ struct OverScoreApp: App {
             }
         } catch {
             // フェッチ失敗時は安全のため何も削除しない
+        }
+        // 入力途中の新規試合（下書き）が取り込んだ動画も残す
+        if let draft = MatchDraftStore.load() {
+            urls.formUnion(draft.videoURLs)
         }
         return urls
     }
